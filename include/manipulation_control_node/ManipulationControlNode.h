@@ -5,8 +5,11 @@
 #include <arm_kinematics/ArmKinematics.h>
 #include <sensor_msgs/JointState.h>
 #include <std_srvs/Empty.h>
+#include <red_msgs/ManipulationObjects.h>
 
 #include <utility>
+#include <string>
+
 
 class ManipulationControlNode 
 {
@@ -17,9 +20,8 @@ class ManipulationControlNode
         void start();
 
     private:
-        bool pickAndPlaseFromTable(std_srvs::Empty::Request & req, std_srvs::Empty::Response & res);
+        bool pickAndPlaseFromTable(red_msgs::ManipulationObjects::Request & req, red_msgs::ManipulationObjects::Response & res);
         bool startCamera(std_srvs::Empty::Request & req, std_srvs::Empty::Response & res);
-        bool switchCamera();
         size_t checkContainerContents(std::pair<std::vector<bool>, std::vector<Pose>> & container);
 
         double cameraOffsetX, cameraOffsetY, cameraOffsetZ;
@@ -28,15 +30,15 @@ class ManipulationControlNode
 
         ros::NodeHandle nh;
 
-        ros::ServiceClient getListObjectsClient;
+        ros::ServiceClient cameraTaskClient;
+
+        ros::ServiceClient cameraStopClient;
 
         ros::ServiceClient graspObjectClient;
 
         ros::ServiceClient moveToPoseClient;
 
-        ros::ServiceClient switchCameraClient;
-
-        ros::ServiceServer tableServer;
+        ros::ServiceServer manipulationTaskServer;
 
         ros::ServiceServer startCameraServer;
 
