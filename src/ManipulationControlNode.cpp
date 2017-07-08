@@ -4,34 +4,34 @@
 #include <std_srvs/Empty.h>
 #include <arm_kinematics/PoseArray.h>
 #include <arm_kinematics/ManipulatorPose.h>
-#include <red_msgs/CameraListObjects.h>
-#include <red_msgs/SwitchCamera.h>
+#include <red_msgs/CameraTask.h>
+#include <red_msgs/CameraStop.h>
 
 ManipulationControlNode::ManipulationControlNode(ros::NodeHandle n) : nh(n)
 {
-    ROS_INFO_STREAM("[Manipulation Control] Load Manipulation Control Node...");
+    ROS_INFO_STREAM("[Local TP] Load Local TP Node...");
 
     nh.getParam("/move_by_camera/camera_offset_x", cameraOffsetX);
     nh.getParam("/move_by_camera/camera_offset_y", cameraOffsetY);
     nh.getParam("/move_by_camera/camera_offset_z", cameraOffsetZ);
     ROS_INFO_STREAM("Camera offset: " << cameraOffsetX << ", " << cameraOffsetY <<  ", " << cameraOffsetZ);
 
-    ROS_INFO_STREAM("[Manipulation Control] ServiceClient: /get_list_objects...");
-    getListObjectsClient = nh.serviceClient<red_msgs::CameraListObjects>("/get_list_objects");
+    ROS_INFO_STREAM("[Local TP] ServiceClient: /camera_task...");
+    cameraTaskClient = nh.serviceClient<red_msgs::CameraTask>("/camera_task");
 
-    ROS_INFO_STREAM("[Manipulation Control] ServiceClient: /grasp_object...");
+    ROS_INFO_STREAM("[Local TP] ServiceClient: /camera_stop...");
+    cameraStopClient = nh.serviceClient<red_msgs::CameraStop>("/camera_stop");
+
+    ROS_INFO_STREAM("[Local TP] ServiceServer: /manipulation_task...");
+    manipulationTaskServer = nh.advertiseService("/manipulation_task", &ManipulationControlNode::pickAndPlaseFromTable, this);
+
+    ROS_INFO_STREAM("[Local TP] ServiceClient: /grasp_object...");
     graspObjectClient = nh.serviceClient<arm_kinematics::ManipulatorPose>("/grasp_object");
 
-    ROS_INFO_STREAM("[Manipulation Control] ServiceClient: /manipulator_pose...");
+    ROS_INFO_STREAM("[Local TP] ServiceClient: /manipulator_pose...");
     moveToPoseClient = nh.serviceClient<arm_kinematics::ManipulatorPose>("/manipulator_pose");
 
-    ROS_INFO_STREAM("[Manipulation Control] ServiceClient: /switch_camera...");
-    switchCameraClient = nh.serviceClient<red_msgs::SwitchCamera>("/switch_camera");
-
-    ROS_INFO_STREAM("[Manipulation Control] ServiceServer: /table_feasible...");
-    tableServer = nh.advertiseService("/table_feasible", &ManipulationControlNode::pickAndPlaseFromTable, this);
-
-    ROS_INFO_STREAM("[Manipulation Control] ServiceServer: /start_camera...");
+    ROS_INFO_STREAM("[Local TP] ServiceServer: /start_camera...");
     startCameraServer = nh.advertiseService("/start_camera", &ManipulationControlNode::startCamera, this);
 
     /////////////////////// INITIAL POSE FOR RECOGNIZED
@@ -74,18 +74,15 @@ ManipulationControlNode::ManipulationControlNode(ros::NodeHandle n) : nh(n)
 ManipulationControlNode::~ManipulationControlNode()
 {}
 
-bool ManipulationControlNode::switchCamera()
-{
-    red_msgs::SwitchCamera switcher;
-    switcher.request.mode = 4;
-
-    return switchCameraClient.call(switcher);
-}
 
 bool ManipulationControlNode::startCamera(std_srvs::Empty::Request & req, std_srvs::Empty::Response & res)
 {
+    red_msgs::CameraTask task;
+    task.request.mode = 4;
+    task.request.shape = "";
+
     ROS_INFO_STREAM("Turn ON camera with mode: 4");
-    if (!switchCamera()) {
+    if (!cameraTaskClient.call(task)) {
         ROS_FATAL_STREAM("Camera is not start with mode 4!");
         return false;
     }
@@ -100,14 +97,18 @@ size_t ManipulationControlNode::checkContainerContents(std::pair<std::vector<boo
     }
     return -1;
 }
-bool ManipulationControlNode::pickAndPlaseFromTable(std_srvs::Empty::Request & req, std_srvs::Empty::Response & res)
+bool ManipulationControlNode::pickAndPlaseFromTable(red_msgs::ManipulationObjects::Request & req, red_msgs::ManipulationObjects::Response & res)
 {
     // Messages
-    red_msgs::CameraListObjects cameraListObjects;
+    red_msgs::CameraTask task;
     Pose recognizedObjectPose;
     arm_kinematics::CertesianPose armPose;
     armPose.position.resize(3);
     armPose.orientation.resize(3);
+    // TODO delete kostil!!!
+    int objectNumber = 0;
+    int graspingObject = 0;
+    bool objectCapture = false;
 
     arm_kinematics::ManipulatorPose manipulatorPose;
     armPose.position[0] = initialPoseForRecognized.position(0);
@@ -139,24 +140,43 @@ bool ManipulationControlNode::pickAndPlaseFromTable(std_srvs::Empty::Request & r
 
         ROS_INFO_STREAM("Turn ON camera.");
         ROS_INFO_STREAM("Reading data from camera.");
-        cameraListObjects.request.mode = 1;     // Standart manipulation picka and place mode
-        cameraListObjects.request.shape = "";   // Shape is not define in mode 1
+        task.request.mode = 1;
+        task.request.shape = "";
         do {
-            getListObjectsClient.call(cameraListObjects);
-        } while (cameraListObjects.response.list.empty() && nh.ok());
+            cameraTaskClient.call(task);
+        } while (task.response.list.empty() && nh.ok());
 
-        recognizedObjectPose.position(0) = cameraListObjects.response.list[0].coordinates_center_frame[0] + cameraOffsetX;
-        recognizedObjectPose.position(1) = cameraListObjects.response.list[0].coordinates_center_frame[1] + cameraOffsetY;
-        recognizedObjectPose.position(2) = cameraListObjects.response.list[0].coordinates_center_frame[2] + cameraOffsetZ;
+        // TODO delete kostil
+        for (objectNumber = 0; objectNumber < task.response.list.size(); ++objectNumber) {
+            if (req.objects[graspingObject] == task.response.list[objectNumber].shape) {
+                ROS_INFO_STREAM("Request: " << req.objects[graspingObject] << "| Camera: " << task.response.list[objectNumber].shape);
+                ++graspingObject;
+                objectCapture = true;
+                break;
+            } else {
+                continue;
+                // TODO compute here
+            }
+        }
+
+        // if (req.objects[graspingObject] != task.response.list[objectNumber - 1].shape) {
+        //     ROS_FATAL_STREAM("Objects not found");
+        //     return false;
+        // }
+
+        recognizedObjectPose.position(0) = task.response.list[objectNumber - 1].coordinates_center_frame[0] + cameraOffsetX;
+        recognizedObjectPose.position(1) = task.response.list[objectNumber - 1].coordinates_center_frame[1] + cameraOffsetY;
+        recognizedObjectPose.position(2) = task.response.list[objectNumber - 1].coordinates_center_frame[2] + cameraOffsetZ;
         recognizedObjectPose.orientation(0) = 0;
-        recognizedObjectPose.orientation(1) = cameraListObjects.response.list[0].orientation[1];
+        recognizedObjectPose.orientation(1) = task.response.list[objectNumber].orientation[1];
         recognizedObjectPose.orientation(2) = 3.1415;
 
         ROS_INFO_STREAM("[Control Node] Recognized object position: (" 
             << recognizedObjectPose.position(0) << ", "
             << recognizedObjectPose.position(1) << ", " 
             << recognizedObjectPose.position(2) << ")\t"
-            << "angle: " << recognizedObjectPose.orientation(1));
+            << "angle: " << recognizedObjectPose.orientation(1)
+            << "xxxxx: " << objectNumber);
 
         Vector3d objectoPoseFromBase = solver.transformFromFrame5ToFrame0(currentJointAngles, recognizedObjectPose.position);
         recognizedObjectPose.position = objectoPoseFromBase;
