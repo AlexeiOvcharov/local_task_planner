@@ -22,8 +22,11 @@ class ManipulationControlNode
     private:
         bool pickAndPlaseFromTable(red_msgs::ManipulationObjects::Request & req, red_msgs::ManipulationObjects::Response & res);
         bool startCamera(std_srvs::Empty::Request & req, std_srvs::Empty::Response & res);
-        size_t checkContainerContents(std::pair<std::vector<bool>, std::vector<Pose>> & container);
+        bool pickObjects(std::vector<std::string> & objects);
+        bool placeObjects(std::vector<std::string> & objects);
+        size_t containerFilling(const std::vector<std::string> &);
 
+        size_t numberOfContainers;
         double cameraOffsetX, cameraOffsetY, cameraOffsetZ;
         JointValues currentJointAngles;
         ArmKinematics solver;
@@ -42,6 +45,6 @@ class ManipulationControlNode
 
         ros::ServiceServer startCameraServer;
 
-        std::pair<std::vector<bool>, std::vector<Pose>> objectContainer;
+        std::pair<std::vector<std::string>, std::vector<Pose>> objectContainer;
 };
 #endif

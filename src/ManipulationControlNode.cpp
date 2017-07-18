@@ -31,8 +31,8 @@ ManipulationControlNode::ManipulationControlNode(ros::NodeHandle n) : nh(n)
     ROS_INFO_STREAM("[Local TP] ServiceClient: /manipulator_pose...");
     moveToPoseClient = nh.serviceClient<arm_kinematics::ManipulatorPose>("/manipulator_pose");
 
-    ROS_INFO_STREAM("[Local TP] ServiceServer: /start_camera...");
-    startCameraServer = nh.advertiseService("/start_camera", &ManipulationControlNode::startCamera, this);
+    ROS_INFO_STREAM("[Local TP] ServiceServer: /recognize_floor_objects...");
+    startCameraServer = nh.advertiseService("/recognize_floor_objects", &ManipulationControlNode::startCamera, this);
 
     /////////////////////// INITIAL POSE FOR RECOGNIZED
     initialPoseForRecognized.position(0) = 0.3;
@@ -63,9 +63,10 @@ ManipulationControlNode::ManipulationControlNode(ros::NodeHandle n) : nh(n)
     thirdContainerPoint.orientation(1) = 0;
     thirdContainerPoint.orientation(2) = -3.1415;
 
-    std::vector<bool> objectContaind = {false, false, false};
+    numberOfContainers = 3;
+    std::vector<std::string> objectsName = {"", "", ""};
     std::vector<Pose> containersPose = {firstContainerPoint, secondContainerPoint, thirdContainerPoint};
-    objectContainer = std::make_pair(objectContaind, containersPose);
+    objectContainer = std::make_pair(objectsName, containersPose);
 
     // finding angle for camera vision manipulator position
     solver.solveFullyIK(initialPoseForRecognized, currentJointAngles);
@@ -89,15 +90,38 @@ bool ManipulationControlNode::startCamera(std_srvs::Empty::Request & req, std_sr
     ROS_INFO_STREAM("Camera STARTING work");
     return true;
 }
-
-size_t ManipulationControlNode::checkContainerContents(std::pair<std::vector<bool>, std::vector<Pose>> & container)
-{   
-    for (size_t i = 0; i < 3; ++i) {
-        if (!container.first[i]) return i;
+size_t  ManipulationControlNode::containerFilling(const std::vector<std::string> & containerObjectsName) {
+    size_t count = 0;
+    for (size_t i = 0; i < numberOfContainers; ++i) {
+        if (containerObjectsName[i] == "") ++count;
     }
-    return -1;
+    return count;
 }
 bool ManipulationControlNode::pickAndPlaseFromTable(red_msgs::ManipulationObjects::Request & req, red_msgs::ManipulationObjects::Response & res)
+{
+    std::vector<std::string> objects = req.objects;
+    if (req.task == red_msgs::ManipulationObjects::Request::PICK) {
+        if (pickObjects(objects)) {
+            res.remaining_objects = objects;
+            res.success = true;
+            return true;
+        } else {
+            res.success = false;
+            return false;
+        }
+    }
+    if (req.task == red_msgs::ManipulationObjects::Request::PLACE) {
+        if (placeObjects(req.objects)) {
+            res.remaining_objects = objects;
+            res.success = true;
+            return true;
+        } else {
+            res.success = false;
+            return false;
+        }
+    }
+}
+bool ManipulationControlNode::pickObjects(std::vector<std::string> & objects)
 {
     // Messages
     red_msgs::CameraTask task;
@@ -107,8 +131,13 @@ bool ManipulationControlNode::pickAndPlaseFromTable(red_msgs::ManipulationObject
     armPose.orientation.resize(3);
     // TODO delete kostil!!!
     int objectNumber = 0;
-    int graspingObject = 0;
+    int graspingObjectNumber = 0;
     bool objectCapture = false;
+    size_t containerSize = containerFilling(objectContainer.first);
+    if (containerSize == 0) {
+        ROS_FATAL_STREAM("Containers is fill!");
+        return false;
+    }
 
     arm_kinematics::ManipulatorPose manipulatorPose;
     armPose.position[0] = initialPoseForRecognized.position(0);
@@ -119,17 +148,11 @@ bool ManipulationControlNode::pickAndPlaseFromTable(red_msgs::ManipulationObject
     armPose.orientation[2] = initialPoseForRecognized.orientation(2);
     manipulatorPose.request.pose = armPose;
 
-    //ROS_INFO_STREAM("Turn OFF camera.");
-    //if (!switchCamera()) {
-    //    ROS_FATAL_STREAM("Can't stop working of camera.");
-    //    return false;
-    //}
-
     ROS_INFO_STREAM("Search free container.");
-    size_t containerNumber = checkContainerContents(objectContainer);
+    size_t containerNumber = 0;
     ROS_INFO_STREAM("Container number: " << containerNumber);
     
-    while (containerNumber != -1 && nh.ok()) {
+    while (containerSize != 0 && nh.ok()) {
 
         if (moveToPoseClient.call(manipulatorPose)) ROS_INFO_STREAM("Go to initial pose.");
         else {
@@ -148,9 +171,9 @@ bool ManipulationControlNode::pickAndPlaseFromTable(red_msgs::ManipulationObject
 
         // TODO delete kostil
         for (objectNumber = 0; objectNumber < task.response.list.size(); ++objectNumber) {
-            if (req.objects[graspingObject] == task.response.list[objectNumber].shape) {
-                ROS_INFO_STREAM("Request: " << req.objects[graspingObject] << "| Camera: " << task.response.list[objectNumber].shape);
-                ++graspingObject;
+            if (objects[graspingObjectNumber] == task.response.list[objectNumber].shape) {
+                ROS_INFO_STREAM("Request: " << objects[graspingObjectNumber] << "| Camera: " << task.response.list[objectNumber].shape);
+                ++graspingObjectNumber;
                 objectCapture = true;
                 break;
             } else {
@@ -159,7 +182,7 @@ bool ManipulationControlNode::pickAndPlaseFromTable(red_msgs::ManipulationObject
             }
         }
 
-        // if (req.objects[graspingObject] != task.response.list[objectNumber - 1].shape) {
+        // if (objects[graspingObjectNumber] != task.response.list[objectNumber - 1].shape) {
         //     ROS_FATAL_STREAM("Objects not found");
         //     return false;
         // }
@@ -195,7 +218,7 @@ bool ManipulationControlNode::pickAndPlaseFromTable(red_msgs::ManipulationObject
             return false;
         }
 
-        /*// Put object
+        // Put object
         for (size_t i = 0; i < 3; ++i) {
             armPose.position[i] = objectContainer.second[containerNumber].position(i);
             armPose.orientation[i] = objectContainer.second[containerNumber].orientation(i);
@@ -207,15 +230,76 @@ bool ManipulationControlNode::pickAndPlaseFromTable(red_msgs::ManipulationObject
         else {
             ROS_FATAL_STREAM("Cant got to camera position.");
             return false;
-        }*/
-        objectContainer.first[containerNumber] = true;
+        }
+        objectContainer.first[containerNumber] = objects[graspingObjectNumber];
 
         ROS_INFO_STREAM("Search free container.");
-        containerNumber = checkContainerContents(objectContainer);
+        ++containerNumber;
+        objects.erase(objects.begin());
         ROS_INFO_STREAM("Container number: " << containerNumber);
     }
     return true;
 }
+
+bool ManipulationControlNode::placeObjects(std::vector<std::string> & objects)
+{
+    arm_kinematics::ManipulatorPose manipulatorPose;
+    arm_kinematics::CertesianPose armPose;
+
+    size_t containerSize = containerFilling(objectContainer.first);
+
+    double experimentalX = 0.32;
+    double yStep = 0.1;
+    double yMin = -0.1;
+    double places[numberOfContainers][3];
+
+    for (size_t i = 0; i < numberOfContainers; ++i) {
+        places[i][0] = experimentalX;
+        places[i][1] = yMin + i*yStep ;
+        places[i][2] = 0.1;
+    }
+
+    while (containerSize != numberOfContainers && nh.ok()) {
+        for (size_t container = 0; container < (numberOfContainers - containerSize); ++container) {
+            if (objects[containerSize] == objects[container]) {
+
+                // Grasp object from container
+                for (size_t j = 0; j < 3; ++j) {
+                    armPose.position[j] = objectContainer.second[container].position(j);
+                    armPose.orientation[j] = objectContainer.second[container].orientation(j);
+                }
+                manipulatorPose.request.pose = armPose;
+                ROS_INFO_STREAM("Grasp the object.");
+                if (graspObjectClient.call(manipulatorPose)) ROS_INFO_STREAM("Successfull grasp the object");
+                else {
+                    ROS_FATAL_STREAM("Cant got to camera position.");
+                    return false;
+                }
+
+                // Place object to table
+                for (size_t i = 0; i < 3; ++i) {
+                    armPose.position[i] = places[containerSize][i];
+                }
+                armPose.orientation[0] = 0;
+                armPose.orientation[1] = 0;
+                armPose.orientation[2] = 3.1415;
+
+                manipulatorPose.request.pose = armPose;
+                ROS_INFO_STREAM("Grasp the object.");
+                if (graspObjectClient.call(manipulatorPose)) ROS_INFO_STREAM("Successfull grasp the object");
+                else {
+                    ROS_FATAL_STREAM("Cant got to camera position.");
+                    return false;
+                }
+                --containerSize;
+                objects.erase(objects.begin());
+                break;
+            }
+        }
+    }
+    return true;
+}
+
 void ManipulationControlNode::start() {
 
     while (nh.ok()) {
