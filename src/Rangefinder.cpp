@@ -8,7 +8,7 @@ Rangefinder::~Rangefinder()
 
 void Rangefinder::open(std::string p)
 {
-    port =
+    port = p;
     sensor = ::open(port.c_str(), O_RDWR | O_NOCTTY | O_SYNC);
     if (sensor == -1) {
         // Could not open the port.
@@ -38,6 +38,8 @@ void Rangefinder::open(std::string p)
 
 double Rangefinder::getRange()
 {
+    double sumOfDistance = 0;
+    double number = 0;
     // Write to port
     int n = write(sensor, "1\0", 1);
     if (n < 0) fputs("write() of 1 bytes failed!\n", stderr);
@@ -51,10 +53,12 @@ double Rangefinder::getRange()
     std::string numStr;
     for (int i = 0; i < n; ++i) {
         if (buf[i] == ' ') {
-            std::cout << atof(numStr.c_str()) << std::endl;
+            sumOfDistance += atof(numStr.c_str());
+            ++number;
             numStr = "";
             continue;
         }
         numStr += buf[i];
     }
+    return sumOfDistance/number;
 }

@@ -35,3 +35,12 @@ add_executable(start_node
 target_link_libraries(start_node
     ${catkin_LIBRARIES}
 )
+
+# TESTS
+add_executable(range_test 
+    tests/RangefinderTest.cpp
+    src/Rangefinder.cpp
+)
+target_link_libraries(range_test
+    ${catkin_LIBRARIES}
+)
