@@ -34,6 +34,9 @@ ManipulationControlNode::ManipulationControlNode(ros::NodeHandle n) : nh(n)
     ROS_INFO_STREAM("[Local TP] ServiceServer: /recognize_floor_objects...");
     startCameraServer = nh.advertiseService("/recognize_floor_objects", &ManipulationControlNode::startCamera, this);
 
+    ROS_INFO_STREAM("[Local TP] Connect to rangefinder to port" << "/dev/ttyACM1");
+    rf.open("/dev/ttyACM1");
+
     /////////////////////// INITIAL POSE FOR RECOGNIZED
     initialPoseForRecognized.position(0) = 0.3;
     initialPoseForRecognized.position(1) = 0.0;
@@ -97,6 +100,7 @@ size_t  ManipulationControlNode::containerFilling(const std::vector<std::string>
     }
     return count;
 }
+
 bool ManipulationControlNode::pickAndPlaseFromTable(red_msgs::ManipulationObjects::Request & req, red_msgs::ManipulationObjects::Response & res)
 {
     std::vector<std::string> objects = req.objects;
@@ -160,6 +164,9 @@ bool ManipulationControlNode::pickObjects(std::vector<std::string> & objects)
             return false;
         }
         ros::Duration(2).sleep();
+
+        distance = rf.getRange();
+        ROS_INFO_STREAM("Measure distance to table: " << distance);
 
         ROS_INFO_STREAM("Turn ON camera.");
         ROS_INFO_STREAM("Reading data from camera.");

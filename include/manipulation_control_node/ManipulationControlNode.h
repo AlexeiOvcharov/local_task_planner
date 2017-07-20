@@ -3,6 +3,7 @@
 
 #include <ros/ros.h>
 #include <arm_kinematics/ArmKinematics.h>
+#include <Rangefinder/Rangefinder.h>
 #include <sensor_msgs/JointState.h>
 #include <std_srvs/Empty.h>
 #include <red_msgs/ManipulationObjects.h>
@@ -25,11 +26,14 @@ class ManipulationControlNode
         bool pickObjects(std::vector<std::string> & objects);
         bool placeObjects(std::vector<std::string> & objects);
         size_t containerFilling(const std::vector<std::string> &);
+        void measureDistance();
 
         size_t numberOfContainers;
         double cameraOffsetX, cameraOffsetY, cameraOffsetZ;
+        double distance;    // Distance from camera to table
         JointValues currentJointAngles;
         ArmKinematics solver;
+        Rangefinder rf;
 
         ros::NodeHandle nh;
 

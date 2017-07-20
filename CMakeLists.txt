@@ -23,12 +23,14 @@ include_directories(
 
 add_library(manipulation_control_node
     src/ManipulationControlNode.cpp
+    src/Rangefinder.cpp
 )
 
 # Node start communication betwenn CV step and Manipulation step 
 add_executable(start_node 
 	src/main.cpp
 	src/ManipulationControlNode.cpp
+    src/Rangefinder.cpp
 )
 target_link_libraries(start_node
     ${catkin_LIBRARIES}
