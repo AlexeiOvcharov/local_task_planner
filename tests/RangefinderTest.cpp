@@ -3,8 +3,11 @@
 
 int main()
 {
+	std::string port;
 	Rangefinder rf;
-	rf.open("/dev/ttyACM1");
+
+	std::cout << "Port: "; std::cin >> port;
+	rf.open(port);
 	std::cout << rf.getRange();
 
 	return 0;
