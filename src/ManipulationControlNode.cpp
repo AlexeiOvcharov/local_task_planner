@@ -6,6 +6,7 @@
 #include <arm_kinematics/ManipulatorPose.h>
 #include <red_msgs/CameraTask.h>
 #include <red_msgs/CameraStop.h>
+#include <red_msgs/GetRange.h>
 
 ManipulationControlNode::ManipulationControlNode(ros::NodeHandle n) : nh(n)
 {
@@ -31,11 +32,14 @@ ManipulationControlNode::ManipulationControlNode(ros::NodeHandle n) : nh(n)
     ROS_INFO_STREAM("[Local TP] ServiceClient: /manipulator_pose...");
     moveToPoseClient = nh.serviceClient<arm_kinematics::ManipulatorPose>("/manipulator_pose");
 
+    ROS_INFO_STREAM("[Local TP] ServiceClient: /get_range...");
+    rangefinderClient = nh.serviceClient<red_msgs::GetRange>("/get_range");
+
     ROS_INFO_STREAM("[Local TP] ServiceServer: /recognize_floor_objects...");
     startCameraServer = nh.advertiseService("/recognize_floor_objects", &ManipulationControlNode::startCamera, this);
 
-    ROS_INFO_STREAM("[Local TP] Connect to rangefinder to port" << "/dev/ttyACM1");
-    rf.open("/dev/ttyACM1");
+    // ROS_INFO_STREAM("[Local TP] Connect to rangefinder to port" << "/dev/ttyACM1");
+    // rf.open("/dev/ttyACM1");
 
     /////////////////////// INITIAL POSE FOR RECOGNIZED
     initialPoseForRecognized.position(0) = 0.3;
@@ -129,6 +133,7 @@ bool ManipulationControlNode::pickObjects(std::vector<std::string> & objects)
 {
     // Messages
     red_msgs::CameraTask task;
+    red_msgs::GetRange range;
     Pose recognizedObjectPose;
     arm_kinematics::CertesianPose armPose;
     armPose.position.resize(3);
@@ -165,8 +170,13 @@ bool ManipulationControlNode::pickObjects(std::vector<std::string> & objects)
         }
         ros::Duration(2).sleep();
 
-        distance = rf.getRange();
-        ROS_INFO_STREAM("Measure distance to table: " << distance);
+        if (rangefinderClient.call(range)) ROS_INFO_STREAM("Measuring distance.");
+        else {
+            ROS_WARN_STREAM("Cant read data from rangefinder.");
+        }
+        // distance = rf.getRange();
+        distance = range.response.distance;
+        ROS_INFO_STREAM("Distance : " << distance);
 
         ROS_INFO_STREAM("Turn ON camera.");
         ROS_INFO_STREAM("Reading data from camera.");

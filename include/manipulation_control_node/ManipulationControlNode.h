@@ -45,6 +45,8 @@ class ManipulationControlNode
 
         ros::ServiceClient moveToPoseClient;
 
+        ros::ServiceClient rangefinderClient;
+
         ros::ServiceServer manipulationTaskServer;
 
         ros::ServiceServer startCameraServer;
