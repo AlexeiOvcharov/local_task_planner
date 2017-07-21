@@ -182,6 +182,7 @@ bool ManipulationControlNode::pickObjects(std::vector<std::string> & objects)
         ROS_INFO_STREAM("Reading data from camera.");
         task.request.mode = 1;
         task.request.shape = "";
+        task.request.distance = distance;
         do {
             cameraTaskClient.call(task);
         } while (task.response.list.empty() && nh.ok());
