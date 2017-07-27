@@ -8,7 +8,8 @@
 #include <red_msgs/CameraStop.h>
 #include <red_msgs/GetRange.h>
 
-ManipulationControlNode::ManipulationControlNode(ros::NodeHandle n) : nh(n)
+
+ManipulationControlNode::ManipulationControlNode(ros::NodeHandle n) : nh(n), naviAc("navi", true)
 {
     ROS_INFO_STREAM("[Local TP] Load Local TP Node...");
 
@@ -77,6 +78,9 @@ ManipulationControlNode::ManipulationControlNode(ros::NodeHandle n) : nh(n)
 
     // finding angle for camera vision manipulator position
     solver.solveFullyIK(initialPoseForRecognized, currentJointAngles);
+
+    heightTrasholdKoeff = 1/3;
+    openGripperWidth = 0.077;
 }
 
 ManipulationControlNode::~ManipulationControlNode()
@@ -108,8 +112,9 @@ size_t  ManipulationControlNode::containerFilling(const std::vector<std::string>
 bool ManipulationControlNode::pickAndPlaseFromTable(red_msgs::ManipulationObjects::Request & req, red_msgs::ManipulationObjects::Response & res)
 {
     std::vector<std::string> objects = req.objects;
+    std::vector<double> heights = req.height;
     if (req.task == red_msgs::ManipulationObjects::Request::PICK) {
-        if (pickObjects(objects)) {
+        if (pickObjects(objects, heights)) {
             res.remaining_objects = objects;
             res.success = true;
             return true;
@@ -129,8 +134,9 @@ bool ManipulationControlNode::pickAndPlaseFromTable(red_msgs::ManipulationObject
         }
     }
 }
-bool ManipulationControlNode::pickObjects(std::vector<std::string> & objects)
+bool ManipulationControlNode::pickObjects(std::vector<std::string> & objects, std::vector<double> & heights)
 {
+    JointValues jointAngles;
     // Messages
     red_msgs::CameraTask task;
     red_msgs::GetRange range;
@@ -191,8 +197,79 @@ bool ManipulationControlNode::pickObjects(std::vector<std::string> & objects)
         for (objectNumber = 0; objectNumber < task.response.list.size(); ++objectNumber) {
             if (objects[graspingObjectNumber] == task.response.list[objectNumber].shape) {
                 ROS_INFO_STREAM("Request: " << objects[graspingObjectNumber] << "| Camera: " << task.response.list[objectNumber].shape);
+                double objectHeight = heights[graspingObjectNumber];
+
+                recognizedObjectPose.position(0) = task.response.list[objectNumber].coordinates_center_frame[0] + cameraOffsetX;
+                recognizedObjectPose.position(1) = task.response.list[objectNumber].coordinates_center_frame[1] + cameraOffsetY;
+                recognizedObjectPose.position(2) = task.response.list[objectNumber].coordinates_center_frame[2] + cameraOffsetZ + objectHeight*heightTrasholdKoeff;
+                recognizedObjectPose.orientation(0) = 0;
+                recognizedObjectPose.orientation(1) = task.response.list[objectNumber].orientation[1];
+                recognizedObjectPose.orientation(2) = 3.1415;
+
+                ROS_INFO_STREAM("[Control Node] Recognized object position: (" 
+                    << recognizedObjectPose.position(0) << ", "
+                    << recognizedObjectPose.position(1) << ", " 
+                    << recognizedObjectPose.position(2) << ")\t"
+                    << "angle: " << recognizedObjectPose.orientation(1));
+
+                Vector3d objectoPoseFromBase = solver.transformFromFrame5ToFrame0(currentJointAngles, recognizedObjectPose.position);
+                recognizedObjectPose.position = objectoPoseFromBase;
+
+                // Check to object is desire to grasp
+                solver.solveFullyIK(recognizedObjectPose, jointAngles);
+                if (sin(jointAngles(4))*sin(jointAngles(1) + jointAngles(2) + jointAngles(3)) < 2*objectHeight*heightTrasholdKoeff/openGripperWidth) {    // h - object height
+                    geometry_msgs::Pose2D desiredShiftOfBase;
+                    red_msgs::DestGoal naviAcGoal;
+
+                    desiredShiftOfBase.x = 0;
+                    desiredShiftOfBase.y = sqrt(pow(recognizedObjectPose.position(0), 2) + pow(recognizedObjectPose.position(1), 2))*sin(jointAngles(4));
+                    desiredShiftOfBase.theta = 0;
+                    naviAcGoal.task = "dist";
+                    naviAcGoal.dist = desiredShiftOfBase;
+                    naviAc.sendGoal(naviAcGoal);
+                    naviAc.waitForResult();
+                    actionlib::SimpleClientGoalState state_ac = naviAc.getState();
+                    if(state_ac.state_ == actionlib::SimpleClientGoalState::SUCCEEDED) {
+                        ROS_INFO("[GTP] Goal is successfully processed");
+                        break;
+                    }
+                }
+
+                // Grasp object
+                for (size_t i = 0; i < 3; ++i) {
+                    armPose.position[i] = recognizedObjectPose.position(i);
+                    armPose.orientation[i] = recognizedObjectPose.orientation(i);
+                }
+                manipulatorPose.request.pose = armPose;
+                ROS_INFO_STREAM("Grasp the object.");
+                if (graspObjectClient.call(manipulatorPose)) ROS_INFO_STREAM("Successfull grasp the object");
+                else {
+                    ROS_FATAL_STREAM("Cant got to camera position.");
+                    return false;
+                }
+
+                // Put object
+                for (size_t i = 0; i < 3; ++i) {
+                    armPose.position[i] = objectContainer.second[containerNumber].position(i);
+                    armPose.orientation[i] = objectContainer.second[containerNumber].orientation(i);
+                }
+                manipulatorPose.request.pose = armPose;
+
+                ROS_INFO_STREAM("Put the object.");
+                if (graspObjectClient.call(manipulatorPose)) ROS_INFO_STREAM("Turn ON camera.");
+                else {
+                    ROS_FATAL_STREAM("Cant got to camera position.");
+                    return false;
+                }
+                objectContainer.first[containerNumber] = objects[graspingObjectNumber];
+
+                ROS_INFO_STREAM("Search free container.");
+                ++containerNumber;
+                objects.erase(objects.begin());
+                ROS_INFO_STREAM("Container number: " << containerNumber);
+
                 ++graspingObjectNumber;
-                objectCapture = true;
+                // objectCapture = true;
                 break;
             } else {
                 continue;
@@ -204,57 +281,6 @@ bool ManipulationControlNode::pickObjects(std::vector<std::string> & objects)
         //     ROS_FATAL_STREAM("Objects not found");
         //     return false;
         // }
-
-        recognizedObjectPose.position(0) = task.response.list[objectNumber - 1].coordinates_center_frame[0] + cameraOffsetX;
-        recognizedObjectPose.position(1) = task.response.list[objectNumber - 1].coordinates_center_frame[1] + cameraOffsetY;
-        recognizedObjectPose.position(2) = task.response.list[objectNumber - 1].coordinates_center_frame[2] + cameraOffsetZ;
-        recognizedObjectPose.orientation(0) = 0;
-        recognizedObjectPose.orientation(1) = task.response.list[objectNumber].orientation[1];
-        recognizedObjectPose.orientation(2) = 3.1415;
-
-        ROS_INFO_STREAM("[Control Node] Recognized object position: (" 
-            << recognizedObjectPose.position(0) << ", "
-            << recognizedObjectPose.position(1) << ", " 
-            << recognizedObjectPose.position(2) << ")\t"
-            << "angle: " << recognizedObjectPose.orientation(1)
-            << "xxxxx: " << objectNumber);
-
-        Vector3d objectoPoseFromBase = solver.transformFromFrame5ToFrame0(currentJointAngles, recognizedObjectPose.position);
-        recognizedObjectPose.position = objectoPoseFromBase;
-
-        // TO DO add object height
-        // Grasp object
-        for (size_t i = 0; i < 3; ++i) {
-            armPose.position[i] = recognizedObjectPose.position(i);
-            armPose.orientation[i] = recognizedObjectPose.orientation(i);
-        }
-        manipulatorPose.request.pose = armPose;
-        ROS_INFO_STREAM("Grasp the object.");
-        if (graspObjectClient.call(manipulatorPose)) ROS_INFO_STREAM("Successfull grasp the object");
-        else {
-            ROS_FATAL_STREAM("Cant got to camera position.");
-            return false;
-        }
-
-        // Put object
-        for (size_t i = 0; i < 3; ++i) {
-            armPose.position[i] = objectContainer.second[containerNumber].position(i);
-            armPose.orientation[i] = objectContainer.second[containerNumber].orientation(i);
-        }
-        manipulatorPose.request.pose = armPose;
-
-        ROS_INFO_STREAM("Put the object.");
-        if (graspObjectClient.call(manipulatorPose)) ROS_INFO_STREAM("Turn ON camera.");
-        else {
-            ROS_FATAL_STREAM("Cant got to camera position.");
-            return false;
-        }
-        objectContainer.first[containerNumber] = objects[graspingObjectNumber];
-
-        ROS_INFO_STREAM("Search free container.");
-        ++containerNumber;
-        objects.erase(objects.begin());
-        ROS_INFO_STREAM("Container number: " << containerNumber);
     }
     return true;
 }

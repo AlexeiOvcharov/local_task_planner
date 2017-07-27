@@ -7,6 +7,10 @@
 #include <sensor_msgs/JointState.h>
 #include <std_srvs/Empty.h>
 #include <red_msgs/ManipulationObjects.h>
+#include <red_msgs/DestAction.h>
+
+#include <actionlib/client/simple_action_client.h>
+#include <actionlib/client/terminal_state.h>
 
 #include <utility>
 #include <string>
@@ -23,7 +27,7 @@ class ManipulationControlNode
     private:
         bool pickAndPlaseFromTable(red_msgs::ManipulationObjects::Request & req, red_msgs::ManipulationObjects::Response & res);
         bool startCamera(std_srvs::Empty::Request & req, std_srvs::Empty::Response & res);
-        bool pickObjects(std::vector<std::string> & objects);
+        bool pickObjects(std::vector<std::string> & objects, std::vector<double> & heights);
         bool placeObjects(std::vector<std::string> & objects);
         size_t containerFilling(const std::vector<std::string> &);
         void measureDistance();
@@ -34,6 +38,8 @@ class ManipulationControlNode
         JointValues currentJointAngles;
         ArmKinematics solver;
         Rangefinder rf;
+        double heightTrasholdKoeff;
+        double openGripperWidth;
 
         ros::NodeHandle nh;
 
@@ -52,5 +58,7 @@ class ManipulationControlNode
         ros::ServiceServer startCameraServer;
 
         std::pair<std::vector<std::string>, std::vector<Pose>> objectContainer;
+
+        actionlib::SimpleActionClient<red_msgs::DestAction> naviAc;
 };
 #endif
