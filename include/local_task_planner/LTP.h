@@ -2,10 +2,8 @@
 #define MANIPULATION_CONTROL_NODE
 
 #include <ros/ros.h>
-#include <arm_kinematics/ArmKinematics.h>
-#include <Rangefinder/Rangefinder.h>
-#include <sensor_msgs/JointState.h>
 #include <std_srvs/Empty.h>
+#include <sensor_msgs/JointState.h>
 #include <red_msgs/ManipulationObjects.h>
 #include <red_msgs/DestAction.h>
 
@@ -30,7 +28,6 @@ class ManipulationControlNode
         bool pickObjects(std::vector<std::string> & objects, std::vector<double> & heights);
         bool placeObjects(std::vector<std::string> & objects);
         size_t containerFilling(const std::vector<std::string> &);
-        void measureDistance();
 
         size_t numberOfContainers;
         double cameraOffsetX, cameraOffsetY, cameraOffsetZ;

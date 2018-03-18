@@ -1,12 +1,4 @@
-#include <manipulation_control_node/ManipulationControlNode.h>
-#include <manipulation_control_node/GraspingArmPositions.h>
-
-#include <std_srvs/Empty.h>
-#include <arm_kinematics/PoseArray.h>
-#include <arm_kinematics/ManipulatorPose.h>
-#include <red_msgs/CameraTask.h>
-#include <red_msgs/CameraStop.h>
-#include <red_msgs/GetRange.h>
+#include <local_task_planner/LTP.h>
 
 
 ManipulationControlNode::ManipulationControlNode(ros::NodeHandle n) : nh(n), naviAc("navi", true)
