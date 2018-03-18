@@ -1,6 +1,5 @@
 #include <local_task_planner/LTP.h>
 
-
 ManipulationControlNode::ManipulationControlNode(ros::NodeHandle n) : nh(n), naviAc("navi", true)
 {
     ROS_INFO_STREAM("[Local TP] Load Local TP Node...");
