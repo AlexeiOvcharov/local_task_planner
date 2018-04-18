@@ -9,13 +9,11 @@ find_package(catkin REQUIRED COMPONENTS
     sensor_msgs
     red_msgs
     std_srvs
-    actionlib
-    actionlib_msgs
 )
 
 catkin_package(
   INCLUDE_DIRS include
-  CATKIN_DEPENDS arm_kinematics roscpp sensor_msgs std_srvs
+  # CATKIN_DEPENDS arm_kinematics roscpp sensor_msgs std_srvs
 )
 
 include_directories(
@@ -23,26 +21,8 @@ include_directories(
     ${catkin_INCLUDE_DIRS}
 )
 
-add_library(manipulation_control_node
-    src/ManipulationControlNode.cpp
-    src/Rangefinder.cpp
-)
+add_executable(FirstTest src/main.cpp src/LTP.cpp)
+# add_executable(CalcCameraOffsets utils/CalculationCameraOffsets.cpp)
 
-# Node start communication betwenn CV step and Manipulation step 
-add_executable(start_node 
-	src/main.cpp
-	src/ManipulationControlNode.cpp
-    src/Rangefinder.cpp
-)
-target_link_libraries(start_node
-    ${catkin_LIBRARIES}
-)
-
-# TESTS
-add_executable(range_test 
-    tests/RangefinderTest.cpp
-    src/Rangefinder.cpp
-)
-target_link_libraries(range_test
-    ${catkin_LIBRARIES}
-)
+target_link_libraries(FirstTest ${catkin_LIBRARIES})
+# target_link_libraries(CalcCameraOffsets ${catkin_LIBRARIES})

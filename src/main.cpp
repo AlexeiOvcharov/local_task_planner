@@ -1,13 +1,21 @@
-#include <manipulation_control_node/ManipulationControlNode.h>
+#include <local_task_planner/LTP.h>
 
 int main(int argc, char ** argv)
 {
-    ros::init(argc, argv, "control_manipulation_node");
+    ros::init(argc, argv, "local_tp");
     ros::NodeHandle nh;
 
-    ManipulationControlNode controlNode(nh);
-    ROS_INFO_STREAM("Start work!");
-    controlNode.start();
+    Configuration conf;
+    conf.mode = 1;
+    conf.cvServiceName = "get_vision";
+    conf.gtpServiceName = "pick_object";
+    conf.manipServiceName = {"manipulator_pose", "MoveLine"};
+
+    localTP tp(nh, conf);
+    // LTP localTP(conf);
+    while(ros::ok()) {
+    	ros::spin();
+    }
 
     return 0;
 }
