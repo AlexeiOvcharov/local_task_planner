@@ -22,7 +22,5 @@ include_directories(
 )
 
 add_executable(FirstTest src/main.cpp src/LTP.cpp)
-# add_executable(CalcCameraOffsets utils/CalculationCameraOffsets.cpp)
 
 target_link_libraries(FirstTest ${catkin_LIBRARIES})
-# target_link_libraries(CalcCameraOffsets ${catkin_LIBRARIES})

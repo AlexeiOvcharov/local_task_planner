@@ -21,17 +21,6 @@ bool localTP::localTaskCallback(std_srvs::Empty::Request  & req,
 {
     ROS_INFO("[LTP] Start task execution");
 
-    // Main camera information
-    double ofsts[] = { -0.05532, -0.0323613, 0.0594661};
-    double mrot[] = {
-        0.0167879,    0.999843,  0.00565638,
-        -0.998794,   0.0165079,    0.046234,
-        0.0461335,   -0.00642542,   0.998915
-    };
-    matrix::Dcm<double> Roffset(mrot);
-    Vector3d offsets(ofsts), cameraPoint, goal, FK;
-    matrix::Matrix<double, 3, 3> R;
-
     red_msgs::Pose pose;
     red_msgs::ArmPoses manipPoses;
 
@@ -66,16 +55,6 @@ bool localTP::localTaskCallback(std_srvs::Empty::Request  & req,
             std::cout << "------------------------------------------" << std::endl;
         }
     }
-
-    // Transform camera point
-    kinematic.calcOrientationMatrix(0, pose.psi, pose.theta, R);
-    FK(0) = pose.x; FK(1) = pose.y; FK(2) = pose.z;
-    cameraPoint(0) = cameraTask.response.poses[0].x;
-    cameraPoint(1) = cameraTask.response.poses[0].y;
-    cameraPoint(2) = cameraTask.response.poses[0].z;
-    goal = FK + R*(offsets + Roffset*cameraPoint);
-    ROS_INFO("Result point.");
-    std::cout << goal << std::endl;
 
     return true;
 }
