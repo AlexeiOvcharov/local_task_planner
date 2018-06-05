@@ -11,9 +11,24 @@ localTP::localTP(ros::NodeHandle & n, Configuration conf)
     if (conf.mode == 1) {
         ROS_INFO("Start RoboCup localTP");
         localTaskServer = nh.advertiseService(conf.gtpServiceName, &localTP::localTaskCallback, this);
+
         compVisionClient = nh.serviceClient<red_msgs::CameraTask>(conf.cvServiceName);
+        if (!ros::service::waitForService(conf.cvServiceName, ros::Duration(3.0))) {
+            ROS_ERROR("Server %s is not active!", conf.cvServiceName.c_str());
+            ros::shutdown();
+        }
+
         manipulationPointClient = nh.serviceClient<red_msgs::ArmPoses>(conf.manipServiceName[0]);
+        if (!ros::service::waitForService(conf.cvServiceName, ros::Duration(3.0))) {
+            ROS_ERROR("Server %s is not active!", conf.manipServiceName[0].c_str());
+            ros::shutdown();
+        }
+
         manipulationLineTrjClient = nh.serviceClient<red_msgs::ArmPoses>(conf.manipServiceName[1]);
+        if (!ros::service::waitForService(conf.cvServiceName, ros::Duration(3.0))) {
+            ROS_ERROR("Server %s is not active!", conf.manipServiceName[1].c_str());
+            ros::shutdown();
+        }
     }
 }
 
@@ -31,11 +46,14 @@ bool localTP::localTaskCallback(std_srvs::Empty::Request  & req,
     // Set initial position of manipulator for object recognition
     recognPose.x = 0.2; recognPose.y = 0; recognPose.z = 0.1;
     recognPose.theta = 3.1415; recognPose.psi = 0;
+
     ROS_INFO("[LTP] Go to first position.");
     ROS_INFO("[LTP] recognPose: [%f, %f, %f, %f, %f]", recognPose.x, recognPose.y, recognPose.z, recognPose.theta, recognPose.psi);
     manipPoses.request.poses.push_back(recognPose);
     if (manipulationPointClient.call(manipPoses)) {
         std::cout << "\t Successfull." << std::endl;
+    } else {
+        ROS_ERROR("ManipulatorPointClient is not active.");
     }
     manipPoses.request.poses.clear();
 
@@ -60,6 +78,8 @@ bool localTP::localTaskCallback(std_srvs::Empty::Request  & req,
             std::cout << "Id: " << i << ": \t" << cameraTask.response.ids[i]<< std::endl;
             std::cout << "------------------------------------------" << std::endl;
         }
+    } else {
+        ROS_ERROR("CompVisionClient is not active.");
     }
 
     // Activate tf for search transform
