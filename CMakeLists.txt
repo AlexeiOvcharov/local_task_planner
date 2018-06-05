@@ -6,9 +6,11 @@ add_compile_options(-std=c++11)
 find_package(catkin REQUIRED COMPONENTS
     arm_kinematics
     roscpp
+    tf2_ros
     sensor_msgs
     red_msgs
     std_srvs
+    geometry_msgs
 )
 
 catkin_package(
