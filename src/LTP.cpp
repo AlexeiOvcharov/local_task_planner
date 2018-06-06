@@ -101,9 +101,16 @@ bool localTP::localTaskCallback(std_srvs::Empty::Request  & req,
         ros::Duration(1.0).sleep();
     }
 
-    optq(0) += atan2(objectTransform.y, objectTransform.x)
-        - atan2(transformStamped.transform.translation.y, transformStamped.transform.translation.x);
+    double phi = cameraTask.response.poses[0].phi,
+           theta = cameraTask.response.poses[0].theta,
+           psi = cameraTask.response.poses[0].psi;
 
+    double ytrans = transformStamped.transform.translation.y - cos(theta)*sin(phi);
+    double xtrans = transformStamped.transform.translation.x + sin(theta);
+    optq(0) += atan2(objectTransform.y, objectTransform.x)      // Desired vector
+        - atan2(ytrans, xtrans);                                // Object translation
+
+    makeYoubotArmOffsets(optq);
     ROS_INFO("Angle q1: %f", optq(0));
 
 
