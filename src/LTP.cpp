@@ -4,6 +4,14 @@
 
 #include <geometry_msgs/TransformStamped.h>
 
+// TF
+#include <tf2_ros/transform_listener.h>
+#include <tf2/LinearMath/Matrix3x3.h>
+#include <tf2/LinearMath/Vector3.h>
+#include <tf2/convert.h>
+#include <tf2/impl/utils.h>
+#include <tf2/utils.h>
+#include <geometry_msgs/TransformStamped.h>
 
 localTP::localTP(ros::NodeHandle & n, Configuration conf)
 {
@@ -94,8 +102,12 @@ bool localTP::localTaskCallback(std_srvs::Empty::Request  & req,
     optq(0) = atan2(recognPose.y, recognPose.x);
 
     geometry_msgs::TransformStamped transformStamped;
+    tf2::Quaternion cameraQuat;
+    tf2::Matrix3x3 rotMatrix;
     try{
         transformStamped = tfBuffer.lookupTransform("realsense_camera", "arm_link_2", ros::Time(1));
+        tf2::fromMsg(transformStamped.transform.rotation, cameraQuat);
+        rotMatrix = tf2::Matrix3x3(cameraQuat);
     } catch (tf2::TransformException &ex) {
         ROS_WARN("%s",ex.what());
         ros::Duration(1.0).sleep();
@@ -105,8 +117,8 @@ bool localTP::localTaskCallback(std_srvs::Empty::Request  & req,
            theta = cameraTask.response.poses[0].theta,
            psi = cameraTask.response.poses[0].psi;
 
-    double ytrans = transformStamped.transform.translation.y - cos(theta)*sin(phi);
-    double xtrans = transformStamped.transform.translation.x + sin(theta);
+    double ytrans = transformStamped.transform.translation.y + rotMatrix[2][1];
+    double xtrans = transformStamped.transform.translation.x + rotMatrix[2][0];
     optq(0) += atan2(objectTransform.y, objectTransform.x)      // Desired vector
         - atan2(ytrans, xtrans);                                // Object translation
 
