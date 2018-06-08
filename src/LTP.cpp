@@ -91,7 +91,7 @@ bool localTP::localTaskCallback(std_srvs::Empty::Request  & req,
     }
 
     // Activate tf for search transform
-    tf2_ros::Buffer tfBuffer;
+    tf2_ros::Buffer tfBuffer(ros::Duration(10));
     tf2_ros::TransformListener tfListener(tfBuffer);
 
     // Find manipulator configuration for optical axis of camera
@@ -105,7 +105,8 @@ bool localTP::localTaskCallback(std_srvs::Empty::Request  & req,
     tf2::Quaternion cameraQuat;
     tf2::Matrix3x3 rotMatrix;
     try{
-        transformStamped = tfBuffer.lookupTransform("realsense_camera", "arm_link_2", ros::Time(1));
+        transformStamped = tfBuffer.lookupTransform("arm_link_1", "realsense_camera", ros::Time(0), ros::Duration(3.0));
+        ROS_INFO_STREAM("Transform: " << transformStamped);
         tf2::fromMsg(transformStamped.transform.rotation, cameraQuat);
         rotMatrix = tf2::Matrix3x3(cameraQuat);
     } catch (tf2::TransformException &ex) {
@@ -113,14 +114,19 @@ bool localTP::localTaskCallback(std_srvs::Empty::Request  & req,
         ros::Duration(1.0).sleep();
     }
 
-    double phi = cameraTask.response.poses[0].phi,
-           theta = cameraTask.response.poses[0].theta,
-           psi = cameraTask.response.poses[0].psi;
+    double camTransx = transformStamped.transform.translation.x;
+    double camTransy = transformStamped.transform.translation.y;
+    double zx = rotMatrix[0][2]; double zy = rotMatrix[1][2];
+    double a1 = zx*camTransx + zy*camTransy;
+    double a2 = camTransx*camTransx + camTransy*camTransy - (objectTransform.x*objectTransform.x + objectTransform.y*objectTransform.y);
+    double h = (-a1 + sqrt(a1*a1 - 4*a2))/2;                                    // Coefficients
+    ROS_INFO_STREAM("h: " << h);
+    ROS_INFO_STREAM("a2: " << a2);
 
-    double ytrans = transformStamped.transform.translation.y + rotMatrix[2][1];
-    double xtrans = transformStamped.transform.translation.x + rotMatrix[2][0];
-    optq(0) += atan2(objectTransform.y, objectTransform.x)      // Desired vector
-        - atan2(ytrans, xtrans);                                // Object translation
+    double ytrans = camTransy + h*zy;
+    double xtrans = camTransx + h*zx;
+    optq(0) += atan2(objectTransform.y, objectTransform.x)              // Desired vector
+        - atan2(ytrans, xtrans);                                        // Object translation
 
     makeYoubotArmOffsets(optq);
     ROS_INFO("Angle q1: %f", optq(0));
