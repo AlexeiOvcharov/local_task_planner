@@ -10,6 +10,7 @@ find_package(catkin REQUIRED COMPONENTS
     red_msgs
     std_srvs
     geometry_msgs
+    brics_actuator
     tf2_ros
 )
 

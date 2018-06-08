@@ -1,8 +1,16 @@
+//// ***************************
+//// Camera modes:
+//// 1 -- Clarify the position of the object
+//// 2 -- Capture the object
+//// ***************************
+
+#define COLOR_NORMAL    "\033[0m"
+#define COLOR_RED       "\033[31m"
+#define COLOR_GREEN     "\033[32m"
+#define COLOR_YELLOW    "\033[33m"
+
+
 #include <local_task_planner/LTP.h>
-
-#include <tf2_ros/transform_listener.h>
-
-#include <geometry_msgs/TransformStamped.h>
 
 // TF
 #include <tf2_ros/transform_listener.h>
@@ -12,6 +20,28 @@
 #include <tf2/impl/utils.h>
 #include <tf2/utils.h>
 #include <geometry_msgs/TransformStamped.h>
+
+// Other
+#include <brics_actuator/JointPositions.h>
+
+
+// TODO move to utils
+brics_actuator::JointPositions createArmPositionMsg(const JointValues & jointAngles, std::vector<int> number)
+{
+    //ROS_INFO("createArmPositionMsg...");
+    brics_actuator::JointPositions jointPositions;
+    brics_actuator::JointValue jointValue;
+    for (size_t i = 0; i < number.size(); ++i) {
+        jointValue.timeStamp = ros::Time::now();
+        std::stringstream jointName;
+        jointName << "arm_joint_" << (number[i]);
+        jointValue.joint_uri = jointName.str();
+        jointValue.unit = "rad";
+        jointValue.value = jointAngles(number[i]);
+        jointPositions.positions.push_back(jointValue);
+    }
+    return jointPositions;
+}
 
 localTP::localTP(ros::NodeHandle & n, Configuration conf)
 {
@@ -38,6 +68,7 @@ localTP::localTP(ros::NodeHandle & n, Configuration conf)
             ros::shutdown();
         }
     }
+    armPublisher = nh.advertise<brics_actuator::JointPositions> ("arm_1/arm_controller/position_command", 1);
 }
 
 localTP::~localTP()
@@ -66,7 +97,7 @@ bool localTP::localTaskCallback(std_srvs::Empty::Request  & req,
     manipPoses.request.poses.clear();
 
     // Communicate with camera
-    ROS_INFO("[LTP] Set request to camera.");
+    ROS_INFO("[LTP] Set request to camera with mode 1.");
     red_msgs::CameraTask cameraTask;
     cameraTask.request.mode = 1;
     if (compVisionClient.call(cameraTask)) {
@@ -90,17 +121,13 @@ bool localTP::localTaskCallback(std_srvs::Empty::Request  & req,
         ROS_ERROR("CompVisionClient is not active.");
     }
 
+    // TODO make circle for grasp the objects
+
     // Activate tf for search transform
     tf2_ros::Buffer tfBuffer(ros::Duration(10));
     tf2_ros::TransformListener tfListener(tfBuffer);
 
-    // Find manipulator configuration for optical axis of camera
     JointValues optq; red_msgs::Pose objectTransform;
-    objectTransform.x = cameraTask.response.poses[0].x;
-    objectTransform.y = cameraTask.response.poses[0].y;
-    objectTransform.z = cameraTask.response.poses[0].z;
-    optq(0) = atan2(recognPose.y, recognPose.x);
-
     geometry_msgs::TransformStamped transformStamped;
     tf2::Quaternion cameraQuat;
     tf2::Matrix3x3 rotMatrix;
@@ -113,24 +140,63 @@ bool localTP::localTaskCallback(std_srvs::Empty::Request  & req,
         ROS_WARN("%s",ex.what());
         ros::Duration(1.0).sleep();
     }
-
     double camTransx = transformStamped.transform.translation.x;
     double camTransy = transformStamped.transform.translation.y;
     double zx = rotMatrix[0][2]; double zy = rotMatrix[1][2];
-    double a1 = zx*camTransx + zy*camTransy;
-    double a2 = camTransx*camTransx + camTransy*camTransy - (objectTransform.x*objectTransform.x + objectTransform.y*objectTransform.y);
-    double h = (-a1 + sqrt(a1*a1 - 4*a2))/2;                                    // Coefficients
+    double a1 = zx*camTransx + zy*camTransy, a2 = 0, h = 0, xtrans = 0, ytrans = 0;
+    int actualObjectID = 0;
+
+    // TODO circle
+    // Find manipulator configuration for optical axis of camera
+    objectTransform.x = cameraTask.response.poses[actualObjectID].x;
+    objectTransform.y = cameraTask.response.poses[actualObjectID].y;
+    objectTransform.z = cameraTask.response.poses[actualObjectID].z;
+    optq(0) = atan2(recognPose.y, recognPose.x);
+
+    // Find desired leinght of z axis
+    a2 = camTransx*camTransx + camTransy*camTransy - (objectTransform.x*objectTransform.x + objectTransform.y*objectTransform.y);
+    h = (-a1 + sqrt(a1*a1 - 4*a2))/2;                            // Coefficients
     ROS_INFO_STREAM("h: " << h);
     ROS_INFO_STREAM("a2: " << a2);
 
-    double ytrans = camTransy + h*zy;
-    double xtrans = camTransx + h*zx;
+    ytrans = camTransy + h*zy;
+    xtrans = camTransx + h*zx;
     optq(0) += atan2(objectTransform.y, objectTransform.x)              // Desired vector
         - atan2(ytrans, xtrans);                                        // Object translation
 
     makeYoubotArmOffsets(optq);
     ROS_INFO("Angle q1: %f", optq(0));
 
+    // Create message
+    std::vector<int> jnum = {1};
+    brics_actuator::JointPositions jointPositions = createArmPositionMsg(optq, jnum);
+    std::cout << jointPositions << std::endl;
+    armPublisher.publish(jointPositions);       // Move to desired angle
+
+    // Communicate with camera
+    ROS_INFO("[LTP] Set request to camera with mode 2.");
+    cameraTask.request.mode = 2;
+    cameraTask.request.request_id = cameraTask.response.ids[actualObjectID];
+    if (compVisionClient.call(cameraTask)) {
+        ROS_INFO_STREAM(COLOR_GREEN << "Successfull" << COLOR_NORMAL);
+        int err = cameraTask.response.error;
+        std::cout << "Error: " << err << std::endl;
+        for (size_t i = 0; i < cameraTask.response.poses.size(); ++i) {
+            // Transform between arm_link_2 and arm_link_5
+            std::cout << "Pose: " << i << std::endl;
+            std::cout << "\t x:     \t" << cameraTask.response.poses[i].x << std::endl;
+            std::cout << "\t y:     \t" << cameraTask.response.poses[i].y << std::endl;
+            std::cout << "\t z:     \t" << cameraTask.response.poses[i].z << std::endl;
+            std::cout << "\t phi:   \t" << cameraTask.response.poses[i].phi << std::endl;
+            std::cout << "\t theta: \t" << cameraTask.response.poses[i].theta << std::endl;
+            std::cout << "\t psi:   \t" << cameraTask.response.poses[i].psi << std::endl;
+
+            std::cout << "Id: " << i << ": \t" << cameraTask.response.ids[i]<< std::endl;
+            std::cout << "------------------------------------------" << std::endl;
+        }
+    } else {
+        ROS_ERROR("CompVisionClient is not active.");
+    }
 
     return true;
 }

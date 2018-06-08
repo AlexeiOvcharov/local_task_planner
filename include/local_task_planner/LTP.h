@@ -85,6 +85,9 @@ class localTP
         // Server for communication with
         // Global task planner
         ros::ServiceServer localTaskServer;
+
+        // Publishers
+        ros::Publisher armPublisher;
 };
 
 #endif
