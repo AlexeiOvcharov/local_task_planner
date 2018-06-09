@@ -203,30 +203,30 @@ bool localTP::localTaskCallback(std_srvs::Empty::Request  & req,
     recognPose.x = cameraTask.response.poses[0].x;
     recognPose.y = cameraTask.response.poses[0].y;
     recognPose.z = cameraTask.response.poses[0].z + 0.1;
-
-    ROS_INFO("[LTP] Go to object.");
-    ROS_INFO("[LTP] recognPose: [%f, %f, %f, %f, %f]", recognPose.x, recognPose.y, recognPose.z, recognPose.theta, recognPose.psi);
     manipPoses.request.poses.push_back(recognPose);
-    if (manipulationPointClient.call(manipPoses)) {
-        std::cout << "\t Successfull." << std::endl;
-    } else {
-        ROS_ERROR("ManipulatorPointClient is not active.");
-    }
 
-    // recognPose.z -= 0.7;
-    // ROS_INFO("[LTP] Trajectory MOVE!!!!");
-    // manipPoses.request.poses.push_back(recognPose);
-    // std::cout << "INFO: ++++++++++++++++++++++++++\n"
-    //     << manipPoses.request.poses[0] << std::endl;
-    //         std::cout << "INFO: ++++++++++++++++++++++++++\n"
-    //     << manipPoses.request.poses[1] << std::endl;
-
-    // if (manipulationLineTrjClient.call(manipPoses)) {
+    // ROS_INFO("[LTP] Go to object.");
+    // ROS_INFO("[LTP] recognPose: [%f, %f, %f, %f, %f]", recognPose.x, recognPose.y, recognPose.z, recognPose.theta, recognPose.psi);
+    // if (manipulationPointClient.call(manipPoses)) {
     //     std::cout << "\t Successfull." << std::endl;
     // } else {
-    //     ROS_ERROR("ManipulationLineTrjClient is not active.");
+    //     ROS_ERROR("ManipulatorPointClient is not active.");
     // }
-    // manipPoses.request.poses.clear();
+
+    recognPose.z -= 0.7;
+    ROS_INFO("[LTP] Trajectory MOVE!!!!");
+    manipPoses.request.poses.push_back(recognPose);
+    std::cout << "INFO: ++++++++++++++++++++++++++\n"
+        << manipPoses.request.poses[0] << std::endl;
+            std::cout << "INFO: ++++++++++++++++++++++++++\n"
+        << manipPoses.request.poses[1] << std::endl;
+
+    if (manipulationLineTrjClient.call(manipPoses)) {
+        std::cout << "\t Successfull." << std::endl;
+    } else {
+        ROS_ERROR("ManipulationLineTrjClient is not active.");
+    }
+    manipPoses.request.poses.clear();
 
 
     return true;
