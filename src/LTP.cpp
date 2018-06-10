@@ -122,6 +122,8 @@ bool localTP::localTaskCallback(std_srvs::Empty::Request  & req,
         ROS_ERROR("CompVisionClient is not active.");
     }
 
+    std::vector<red_msgs::Pose> regonizedPoses = cameraTask.response.poses;
+    std::vector<long int> objIdenifiers = cameraTask.response.ids;
     // TODO make circle for grasp the objects
 
     // Activate tf for search transform
@@ -148,86 +150,97 @@ bool localTP::localTaskCallback(std_srvs::Empty::Request  & req,
     int actualObjectID = 0;
 
     // TODO circle
-    // Find manipulator configuration for optical axis of camera
-    objectTransform.x = cameraTask.response.poses[actualObjectID].x;
-    objectTransform.y = cameraTask.response.poses[actualObjectID].y;
-    objectTransform.z = cameraTask.response.poses[actualObjectID].z;
-    optq(0) = atan2(recognPose.y, recognPose.x);
+    for (int j = 0; j < regonizedPoses.size(); ++j) {
+        actualObjectID = j;
 
-    // Find desired leinght of z axis
-    a2 = camTransx*camTransx + camTransy*camTransy - (objectTransform.x*objectTransform.x + objectTransform.y*objectTransform.y);
-    h = (-a1 + sqrt(a1*a1 - 4*a2))/2;                            // Coefficients
-    ROS_INFO_STREAM("h: " << h);
-    ROS_INFO_STREAM("a2: " << a2);
+        // Find manipulator configuration for optical axis of camera
+        objectTransform.x = regonizedPoses[actualObjectID].x;
+        objectTransform.y = regonizedPoses[actualObjectID].y;
+        objectTransform.z = regonizedPoses[actualObjectID].z;
+        optq(0) = atan2(recognPose.y, recognPose.x);
 
-    ytrans = camTransy + h*zy;
-    xtrans = camTransx + h*zx;
-    optq(0) += atan2(objectTransform.y, objectTransform.x)              // Desired vector
-        - atan2(ytrans, xtrans);                                        // Object translation
+        // Find desired leinght of z axis
+        a2 = camTransx*camTransx + camTransy*camTransy - (objectTransform.x*objectTransform.x + objectTransform.y*objectTransform.y);
+        h = (-a1 + sqrt(a1*a1 - 4*a2))/2;                            // Coefficients
+        ROS_INFO_STREAM("h: " << h);
+        ROS_INFO_STREAM("a2: " << a2);
 
-    makeYoubotArmOffsets(optq);
-    ROS_INFO("Angle q1: %f", optq(0));
+        ytrans = camTransy + h*zy;
+        xtrans = camTransx + h*zx;
+        optq(0) += atan2(objectTransform.y, objectTransform.x)              // Desired vector
+            - atan2(ytrans, xtrans);                                        // Object translation
 
-    // Create message
-    std::vector<int> jnum = {0};
-    brics_actuator::JointPositions jointPositions = createArmPositionMsg(optq, jnum);
-    std::cout << jointPositions << std::endl;
-    armPublisher.publish(jointPositions);       // Move to desired angle
-    ros::Duration(5).sleep();
+        makeYoubotArmOffsets(optq);
+        ROS_INFO("Angle q1: %f", optq(0));
 
-    // Communicate with camera
-    ROS_INFO("[LTP] Set request to camera with mode 2.");
-    cameraTask.request.mode = 2;
-    cameraTask.request.request_id = cameraTask.response.ids[actualObjectID];
-    if (compVisionClient.call(cameraTask)) {
-        ROS_INFO_STREAM(COLOR_GREEN << "Successfull" << COLOR_NORMAL);
-        int err = cameraTask.response.error;
-        std::cout << "Error: " << err << std::endl;
-        for (size_t i = 0; i < cameraTask.response.poses.size(); ++i) {
-            // Transform between arm_link_2 and arm_link_5
-            std::cout << "Pose: " << i << std::endl;
-            std::cout << "\t x:     \t" << cameraTask.response.poses[i].x << std::endl;
-            std::cout << "\t y:     \t" << cameraTask.response.poses[i].y << std::endl;
-            std::cout << "\t z:     \t" << cameraTask.response.poses[i].z << std::endl;
-            std::cout << "\t phi:   \t" << cameraTask.response.poses[i].phi << std::endl;
-            std::cout << "\t theta: \t" << cameraTask.response.poses[i].theta << std::endl;
-            std::cout << "\t psi:   \t" << cameraTask.response.poses[i].psi << std::endl;
+        // Create message
+        std::vector<int> jnum = {0};
+        brics_actuator::JointPositions jointPositions = createArmPositionMsg(optq, jnum);
+        std::cout << jointPositions << std::endl;
+        armPublisher.publish(jointPositions);       // Move to desired angle
+        ros::Duration(5).sleep();
 
-            std::cout << "Id: " << i << ": \t" << cameraTask.response.ids[i]<< std::endl;
-            std::cout << "------------------------------------------" << std::endl;
+        // Communicate with camera
+        ROS_INFO("[LTP] Set request to camera with mode 2.");
+        cameraTask.request.mode = 2;
+        cameraTask.request.request_id = cameraTask.response.ids[actualObjectID];
+        if (compVisionClient.call(cameraTask)) {
+            ROS_INFO_STREAM(COLOR_GREEN << "Successfull" << COLOR_NORMAL);
+            int err = cameraTask.response.error;
+            std::cout << "Error: " << err << std::endl;
+            for (size_t i = 0; i < cameraTask.response.poses.size(); ++i) {
+                // Transform between arm_link_2 and arm_link_5
+                std::cout << "Pose: " << i << std::endl;
+                std::cout << "\t x:     \t" << cameraTask.response.poses[i].x << std::endl;
+                std::cout << "\t y:     \t" << cameraTask.response.poses[i].y << std::endl;
+                std::cout << "\t z:     \t" << cameraTask.response.poses[i].z << std::endl;
+                std::cout << "\t phi:   \t" << cameraTask.response.poses[i].phi << std::endl;
+                std::cout << "\t theta: \t" << cameraTask.response.poses[i].theta << std::endl;
+                std::cout << "\t psi:   \t" << cameraTask.response.poses[i].psi << std::endl;
+
+                std::cout << "Id: " << i << ": \t" << cameraTask.response.ids[i]<< std::endl;
+                std::cout << "------------------------------------------" << std::endl;
+            }
+        } else {
+            ROS_ERROR("CompVisionClient is not active.");
         }
-    } else {
-        ROS_ERROR("CompVisionClient is not active.");
+
+        red_msgs::Pose desPose;
+        recognPose.x = cameraTask.response.poses[0].x;
+        recognPose.y = cameraTask.response.poses[0].y;
+        recognPose.z = cameraTask.response.poses[0].z + 0.1;
+
+        desPose = recognPose;
+        desPose.z -= 0.09;
+
+        ROS_INFO("[LTP] Trajectory MOVE!!!!");
+        manipPoses.request.poses.push_back(recognPose);
+        manipPoses.request.poses.push_back(desPose);
+        ROS_INFO_STREAM("lol\n" << recognPose);
+        ROS_INFO_STREAM("lol\n" << desPose);
+        std::cout << "INFO: ++++++++++++++++++++++++++\n"
+            << manipPoses.request.poses[0] << std::endl;
+                std::cout << "INFO: ++++++++++++++++++++++++++\n"
+            << manipPoses.request.poses[1] << std::endl;
+
+        if (manipulationLineTrjClient.call(manipPoses)) {
+            std::cout << "\t Successfull." << std::endl;
+        } else {
+            ROS_ERROR("ManipulationLineTrjClient is not active.");
+        }
+        manipPoses.request.poses.clear();
+
+        recognPose.x = 0.2; recognPose.y = 0; recognPose.z = 0.1;
+        ROS_INFO("[LTP] recognPose: [%f, %f, %f, %f, %f]", recognPose.x, recognPose.y, recognPose.z, recognPose.theta, recognPose.psi);
+        manipPoses.request.poses.push_back(recognPose);
+        if (manipulationPointClient.call(manipPoses)) {
+            std::cout << "\t Successfull." << std::endl;
+        } else {
+            ROS_ERROR("ManipulatorPointClient is not active.");
+        }
+        manipPoses.request.poses.clear();
+        ros::Duration(1).sleep();
     }
-
-    recognPose.x = cameraTask.response.poses[0].x;
-    recognPose.y = cameraTask.response.poses[0].y;
-    recognPose.z = cameraTask.response.poses[0].z + 0.1;
-    manipPoses.request.poses.push_back(recognPose);
-
-    // ROS_INFO("[LTP] Go to object.");
-    // ROS_INFO("[LTP] recognPose: [%f, %f, %f, %f, %f]", recognPose.x, recognPose.y, recognPose.z, recognPose.theta, recognPose.psi);
-    // if (manipulationPointClient.call(manipPoses)) {
-    //     std::cout << "\t Successfull." << std::endl;
-    // } else {
-    //     ROS_ERROR("ManipulatorPointClient is not active.");
-    // }
-
-    recognPose.z -= 0.7;
-    ROS_INFO("[LTP] Trajectory MOVE!!!!");
-    manipPoses.request.poses.push_back(recognPose);
-    std::cout << "INFO: ++++++++++++++++++++++++++\n"
-        << manipPoses.request.poses[0] << std::endl;
-            std::cout << "INFO: ++++++++++++++++++++++++++\n"
-        << manipPoses.request.poses[1] << std::endl;
-
-    if (manipulationLineTrjClient.call(manipPoses)) {
-        std::cout << "\t Successfull." << std::endl;
-    } else {
-        ROS_ERROR("ManipulationLineTrjClient is not active.");
-    }
-    manipPoses.request.poses.clear();
-
 
     return true;
 }
