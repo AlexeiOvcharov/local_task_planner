@@ -19,9 +19,49 @@ struct Container
         size = contSize;
         ids.resize(size);
         poses.resize(size);
+        std::fill(ids.begin(), ids.end(), -1);
     }
 
-    // size_t getFreeContainer()
+    bool isEmpty(int num) {
+        if (ids[num] == -1)
+            return true;
+        return false;
+    }
+
+    red_msgs::Pose getFreeContainerPoseAndSetID(int id) {
+        for (size_t i = 0; i < size; ++i) {
+            if(isEmpty(i)) {
+                ids[i] = id;
+                return poses[i];
+            }
+        }
+    }
+
+    int getContainerByID(int id) {
+        for (int i = 0; i < ids.size(); ++i) {
+            if (ids[i] == id)
+                return i;
+        }
+        return -1;
+    }
+
+    bool clearContainer(int id) {
+        int num = getContainerByID(id);
+        if (num == -1)
+            return false;
+        ids[num] = -1;
+        return true;
+    }
+
+    void printIDS()
+    {
+        std::cout << "------------------ IDS ------------------" << std::endl;
+        for (int i = 0; i < ids.size(); ++i) {
+            std::cout << "id (" << i << ") ------------------------ " << ids[i] << std::endl;
+        }
+        std::cout << "/----------------- IDS -----------------/" << std::endl;
+    }
+
     size_t size;
 
     // Object identificators
@@ -30,6 +70,7 @@ struct Container
     // Poses in contaier
     std::vector<red_msgs::Pose> poses;
 };
+
 
 struct Configuration
 {
@@ -57,6 +98,8 @@ class localTP
 
         bool localTaskCallback(std_srvs::Empty::Request  & req,
                                std_srvs::Empty::Response & res);
+
+        void callCamera(red_msgs::CameraTask & task);
 
         void recognizeAndPickObjects(std::vector<int> objectsForGrasping);
 
@@ -88,6 +131,9 @@ class localTP
 
         // Publishers
         ros::Publisher armPublisher;
+
+        // Errors
+        int cameraError;
 };
 
 #endif
