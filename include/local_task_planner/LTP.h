@@ -7,8 +7,12 @@
 #include <red_msgs/Pose.h>
 #include <red_msgs/CameraTask.h>
 #include <red_msgs/ArmPoses.h>
+#include <red_msgs/LTPTaskAction.h>
+#include <red_msgs/ManipulationObject.h>
 
 #include <std_srvs/Empty.h>
+
+#include <actionlib/server/simple_action_server.h>
 
 struct Container
 {
@@ -96,17 +100,22 @@ class localTP
 
     private:
 
-        bool localTaskCallback(std_srvs::Empty::Request  & req,
-                               std_srvs::Empty::Response & res);
+        void localTaskCallback(const red_msgs::LTPTaskGoalConstPtr & goal);
 
         void callCamera(red_msgs::CameraTask & task);
 
         void recognizeAndPickObjects(std::vector<int> objectsForGrasping);
 
+        int executePICK(std::vector<red_msgs::ManipulationObject> & objects);
+        int executePLACE(std::vector<red_msgs::ManipulationObject> & objects);
+
         ros::NodeHandle nh;
 
         // Container for objects (table behind youbot)
         Container objectsContainer;
+
+        // Kinematics class for transform camera point
+        ArmKinematics kinematic;
 
         // Offset of camera from link 5
         red_msgs::Pose cameraOffset;
@@ -122,18 +131,14 @@ class localTP
         // Move to line
         ros::ServiceClient manipulationLineTrjClient;
 
-        // Kinematics class for transform camera point
-        ArmKinematics kinematic;
-
-        // Server for communication with
-        // Global task planner
-        ros::ServiceServer localTaskServer;
-
         // Publishers
         ros::Publisher armPublisher;
 
         // Errors
         int cameraError;
+
+        // Actions
+        actionlib::SimpleActionServer<red_msgs::LTPTaskAction> localTaskServer;
 };
 
 #endif

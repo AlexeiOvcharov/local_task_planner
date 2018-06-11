@@ -12,6 +12,7 @@ find_package(catkin REQUIRED COMPONENTS
     geometry_msgs
     brics_actuator
     tf2_ros
+    actionlib
 )
 
 catkin_package(

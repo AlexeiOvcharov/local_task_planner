@@ -44,13 +44,13 @@ brics_actuator::JointPositions createArmPositionMsg(const JointValues & jointAng
     return jointPositions;
 }
 
-localTP::localTP(ros::NodeHandle & n, Configuration conf)
-: objectsContainer(3)
+localTP::localTP(ros::NodeHandle & n, Configuration conf) :
+    objectsContainer(3),
+    localTaskServer(n, "LTP", boost::bind(&localTP::localTaskCallback, this, _1), false)
 {
     nh = n;
     if (conf.mode == 1) {
         ROS_INFO("Start RoboCup localTP");
-        localTaskServer = nh.advertiseService(conf.gtpServiceName, &localTP::localTaskCallback, this);
 
         compVisionClient = nh.serviceClient<red_msgs::CameraTask>(conf.cvServiceName);
         if (!ros::service::waitForService(conf.cvServiceName, ros::Duration(3.0))) {
@@ -95,21 +95,36 @@ localTP::localTP(ros::NodeHandle & n, Configuration conf)
 localTP::~localTP()
 {}
 
-bool localTP::localTaskCallback(std_srvs::Empty::Request  & req,
-                            std_srvs::Empty::Response & res)
+void localTP::localTaskCallback(const red_msgs::LTPTaskGoalConstPtr & goal)
 {
-    ROS_INFO("[LTP] Start task execution");
 
-    red_msgs::Pose recognPose;
+    std::vector<red_msgs::ManipulationObject> objects;
+    red_msgs::LTPTaskFeedback feedback;
+    red_msgs::LTPTaskResult result;
+
+    objects = goal->objects;
+    if (goal->task == 1) {           /// PICK
+        executePICK(objects);
+    } else if (goal->task == 2) {    /// PLACE
+        executePLACE(objects);
+    }
+
+    result.result = objects;
+    localTaskServer.setSucceeded(result);
+}
+
+int localTP::executePICK(std::vector<red_msgs::ManipulationObject> & objects) {
+    ROS_INFO("[LTP] Start PICK execution");
+
+    red_msgs::Pose recognPose, firstPose, secondPose;
     red_msgs::ArmPoses manipPoses;
     std_srvs::Empty empty;
 
     // Set initial position of manipulator for object recognition
-    recognPose.x = 0.2; recognPose.y = 0; recognPose.z = 0.1;
+    recognPose.x = 0.24; recognPose.y = 0; recognPose.z = 0.05;
     recognPose.theta = 3.1415; recognPose.psi = 0;
 
     ROS_INFO("[LTP] Go to first position.");
-    ROS_INFO("[LTP] recognPose: [%f, %f, %f, %f, %f]", recognPose.x, recognPose.y, recognPose.z, recognPose.theta, recognPose.psi);
     manipPoses.request.poses.push_back(recognPose);
     if (manipulationPointClient.call(manipPoses)) {
         std::cout << "\t Successfull." << std::endl;
@@ -195,16 +210,16 @@ bool localTP::localTaskCallback(std_srvs::Empty::Request  & req,
         }
 
         red_msgs::Pose desPose;
-        recognPose.x = cameraTask.response.poses[0].x;
-        recognPose.y = cameraTask.response.poses[0].y;
-        recognPose.z = cameraTask.response.poses[0].z + 0.1;
-        recognPose.psi = -cameraTask.response.poses[0].psi;
+        firstPose.x = cameraTask.response.poses[0].x;
+        firstPose.y = cameraTask.response.poses[0].y;
+        firstPose.z = cameraTask.response.poses[0].z + 0.1;
+        firstPose.psi = -cameraTask.response.poses[0].psi;
 
-        desPose = recognPose;
-        desPose.z -= 0.09;
+        desPose = firstPose;
+        desPose.z -= 0.1;
 
         ROS_WARN("[LTP] PICK THE Objects!!!!");
-        manipPoses.request.poses.push_back(recognPose);
+        manipPoses.request.poses.push_back(firstPose);
         manipPoses.request.poses.push_back(desPose);
         std::cout << "INFO: ++++++++++++++++++++++++++\n"
             << manipPoses.request.poses[0] << std::endl;
@@ -220,11 +235,11 @@ bool localTP::localTaskCallback(std_srvs::Empty::Request  & req,
         ros::service::call("grasp", empty);
 
         desPose = objectsContainer.getFreeContainerPoseAndSetID(actualObjectID);
-        recognPose = desPose;
-        recognPose.z += 0.1;
+        firstPose = desPose;
+        firstPose.z += 0.1;
 
         ROS_WARN("[LTP] PLACE TO TABLE Objects!!!!");
-        manipPoses.request.poses.push_back(recognPose);
+        manipPoses.request.poses.push_back(firstPose);
         manipPoses.request.poses.push_back(desPose);
         std::cout << "INFO: ++++++++++++++++++++++++++\n"
             << manipPoses.request.poses[0] << std::endl;
@@ -239,8 +254,6 @@ bool localTP::localTaskCallback(std_srvs::Empty::Request  & req,
         manipPoses.request.poses.clear();
         ros::service::call("release_arm", empty);
 
-        recognPose.x = 0.24; recognPose.y = 0; recognPose.z = 0.05;
-        recognPose.theta = 3.1415; recognPose.psi = 0;
         ROS_INFO("[LTP] recognPose: [%f, %f, %f, %f, %f]", recognPose.x, recognPose.y, recognPose.z, recognPose.theta, recognPose.psi);
         manipPoses.request.poses.push_back(recognPose);
         if (manipulationPointClient.call(manipPoses)) {
@@ -253,7 +266,12 @@ bool localTP::localTaskCallback(std_srvs::Empty::Request  & req,
     }
     objectsContainer.printIDS();
 
-    return true;
+    return 1;
+}
+
+int localTP::executePLACE(std::vector<red_msgs::ManipulationObject> & objects) {
+
+    return 1;
 }
 
 void localTP::callCamera(red_msgs::CameraTask & task) {
@@ -262,15 +280,10 @@ void localTP::callCamera(red_msgs::CameraTask & task) {
         cameraError = task.response.error;
         std::cout << "Error: " << cameraError << std::endl;
         for (size_t i = 0; i < task.response.poses.size(); ++i) {
-            // Transform between arm_link_2 and arm_link_5
+            // Transform between arm_link_2 and arm_link_5 | Task 1 -- find all objects
+            // Transform between arm_link_0 and arm_link_5 | Task 2 -- get current object by id
             std::cout << "Pose: " << i << std::endl;
-            std::cout << "\t x:     \t" << task.response.poses[i].x << std::endl;
-            std::cout << "\t y:     \t" << task.response.poses[i].y << std::endl;
-            std::cout << "\t z:     \t" << task.response.poses[i].z << std::endl;
-            std::cout << "\t phi:   \t" << task.response.poses[i].phi << std::endl;
-            std::cout << "\t theta: \t" << task.response.poses[i].theta << std::endl;
-            std::cout << "\t psi:   \t" << task.response.poses[i].psi << std::endl;
-
+            std::cout << task.response.poses[i] << std::endl;
             std::cout << "Id: " << i << ": \t" << task.response.ids[i]<< std::endl;
             std::cout << "------------------------------------------" << std::endl;
         }
@@ -279,5 +292,12 @@ void localTP::callCamera(red_msgs::CameraTask & task) {
     }
     if (cameraError == 1 && task.request.mode == 2) {
         ROS_ERROR_STREAM("Object with id " << task.request.request_id << "is NOT FOUND");
+        return;
+    }
+
+    if (task.request.mode == 2) {
+        if (abs(task.response.poses[0].psi) > 100*M_PI/180)
+            task.response.poses[0].psi += -sign(task.response.poses[0].psi)*M_PI;
+
     }
 }
