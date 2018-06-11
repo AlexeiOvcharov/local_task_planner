@@ -124,6 +124,8 @@ int localTP::executePICK(std::vector<red_msgs::ManipulationObject> & objects) {
     // Set initial position of manipulator for object recognition
     recognPose.x = 0.24; recognPose.y = 0; recognPose.z = 0.05;
     recognPose.theta = 3.1415; recognPose.psi = 0;
+    firstPose.theta = 3.1415;
+    secondPose.theta = 3.1415;
 
     ROS_INFO("[LTP] Go to first position.");
     manipPoses.request.poses.push_back(recognPose);
