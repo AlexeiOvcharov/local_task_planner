@@ -71,6 +71,7 @@ localTP::localTP(ros::NodeHandle & n, Configuration conf) :
         }
     }
     armPublisher = nh.advertise<brics_actuator::JointPositions> ("arm_1/arm_controller/position_command", 1);
+    localTaskServer.start();
 
     // Setup containers
     objectsContainer.poses[0].x = -0.37;
@@ -209,18 +210,17 @@ int localTP::executePICK(std::vector<red_msgs::ManipulationObject> & objects) {
             continue;
         }
 
-        red_msgs::Pose desPose;
         firstPose.x = cameraTask.response.poses[0].x;
         firstPose.y = cameraTask.response.poses[0].y;
         firstPose.z = cameraTask.response.poses[0].z + 0.1;
         firstPose.psi = -cameraTask.response.poses[0].psi;
 
-        desPose = firstPose;
-        desPose.z -= 0.1;
+        secondPose = firstPose;
+        secondPose.z -= 0.1;
 
         ROS_WARN("[LTP] PICK THE Objects!!!!");
         manipPoses.request.poses.push_back(firstPose);
-        manipPoses.request.poses.push_back(desPose);
+        manipPoses.request.poses.push_back(secondPose);
         std::cout << "INFO: ++++++++++++++++++++++++++\n"
             << manipPoses.request.poses[0] << std::endl;
                 std::cout << "INFO: ++++++++++++++++++++++++++\n"
@@ -234,25 +234,25 @@ int localTP::executePICK(std::vector<red_msgs::ManipulationObject> & objects) {
         manipPoses.request.poses.clear();
         ros::service::call("grasp", empty);
 
-        desPose = objectsContainer.getFreeContainerPoseAndSetID(actualObjectID);
-        firstPose = desPose;
+        secondPose = objectsContainer.getFreeContainerPoseAndSetID(actualObjectID);
+        firstPose = secondPose;
         firstPose.z += 0.1;
 
-        ROS_WARN("[LTP] PLACE TO TABLE Objects!!!!");
-        manipPoses.request.poses.push_back(firstPose);
-        manipPoses.request.poses.push_back(desPose);
-        std::cout << "INFO: ++++++++++++++++++++++++++\n"
-            << manipPoses.request.poses[0] << std::endl;
-                std::cout << "INFO: ++++++++++++++++++++++++++\n"
-            << manipPoses.request.poses[1] << std::endl;
+        // ROS_WARN("[LTP] PLACE TO TABLE Objects!!!!");
+        // manipPoses.request.poses.push_back(firstPose);
+        // manipPoses.request.poses.push_back(secondPose);
+        // std::cout << "INFO: ++++++++++++++++++++++++++\n"
+        //     << manipPoses.request.poses[0] << std::endl;
+        //         std::cout << "INFO: ++++++++++++++++++++++++++\n"
+        //     << manipPoses.request.poses[1] << std::endl;
 
-        if (manipulationLineTrjClient.call(manipPoses)) {
-            std::cout << "\t Successfull." << std::endl;
-        } else {
-            ROS_ERROR("ManipulationLineTrjClient is not active.");
-        }
-        manipPoses.request.poses.clear();
-        ros::service::call("release_arm", empty);
+        // if (manipulationLineTrjClient.call(manipPoses)) {
+        //     std::cout << "\t Successfull." << std::endl;
+        // } else {
+        //     ROS_ERROR("ManipulationLineTrjClient is not active.");
+        // }
+        // manipPoses.request.poses.clear();
+        // ros::service::call("release_arm", empty);
 
         ROS_INFO("[LTP] recognPose: [%f, %f, %f, %f, %f]", recognPose.x, recognPose.y, recognPose.z, recognPose.theta, recognPose.psi);
         manipPoses.request.poses.push_back(recognPose);
