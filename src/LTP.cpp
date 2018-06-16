@@ -9,7 +9,6 @@
 #define COLOR_GREEN     "\033[32m"
 #define COLOR_YELLOW    "\033[33m"
 
-
 #include <local_task_planner/LTP.h>
 
 // TF
@@ -28,8 +27,11 @@
 int findObjectIndexByID(const std::vector<red_msgs::ManipulationObject> & objects, int id)
 {
     for (size_t i = 0; i < objects.size(); ++i) {
-        if (objects[i].obj == id)
+        ROS_WARN_STREAM("ID: (" << objects[i].obj << " | " << id << ")\t Dest: " << objects[i].dest);
+
+        if (objects[i].obj == id && objects[i].dest == 0) {
             return i;
+        }
     }
     return -1;
 }
@@ -84,19 +86,19 @@ localTP::localTP(ros::NodeHandle & n, Configuration conf) :
     // Setup containers
     objectsContainer.poses[0].x = -0.37;
     objectsContainer.poses[0].y = 0;
-    objectsContainer.poses[0].z = -0.01;
+    objectsContainer.poses[0].z = -0.02;
     objectsContainer.poses[0].theta = -3.1415;
     objectsContainer.poses[0].psi = 0;
 
     objectsContainer.poses[1].x = -0.37;
     objectsContainer.poses[1].y = 0.1;
-    objectsContainer.poses[1].z = -0.01;
+    objectsContainer.poses[1].z = -0.02;
     objectsContainer.poses[1].theta = -3.1415;
     objectsContainer.poses[1].psi = -0.25;
 
     objectsContainer.poses[2].x = -0.37;
     objectsContainer.poses[2].y = -0.1;
-    objectsContainer.poses[2].z = -0.01;
+    objectsContainer.poses[2].z = -0.02;
     objectsContainer.poses[2].theta = -3.1415;
     objectsContainer.poses[2].psi = 0.25;
 }
@@ -112,6 +114,8 @@ void localTP::localTaskCallback(const red_msgs::LTPTaskGoalConstPtr & goal)
     red_msgs::LTPTaskResult result;
 
     objects = goal->objects;
+    if (objects.empty())
+        return;
     if (goal->task == 1) {           /// PICK
         executePICK(objects);
     } else if (goal->task == 2) {    /// PLACE
@@ -123,6 +127,7 @@ void localTP::localTaskCallback(const red_msgs::LTPTaskGoalConstPtr & goal)
 }
 
 int localTP::executePICK(std::vector<red_msgs::ManipulationObject> & objects) {
+
     ROS_INFO("[LTP] Start PICK execution");
 
     red_msgs::Pose recognPose, firstPose, secondPose;
@@ -157,6 +162,7 @@ int localTP::executePICK(std::vector<red_msgs::ManipulationObject> & objects) {
 
     std::vector<red_msgs::Pose> regonizedPoses = cameraTask.response.poses;
     std::vector<long int> objIdenifiers = cameraTask.response.ids;
+    ROS_INFO_STREAM("Finded OBJECTS num: " << regonizedPoses.size());
 
     // Activate tf for search transform
     tf2_ros::Buffer tfBuffer(ros::Duration(10));
@@ -168,7 +174,7 @@ int localTP::executePICK(std::vector<red_msgs::ManipulationObject> & objects) {
     tf2::Matrix3x3 rotMatrix;
     try{
         transformStamped = tfBuffer.lookupTransform("arm_link_1", "realsense_camera", ros::Time(0), ros::Duration(3.0));
-        ROS_INFO_STREAM("Transform: " << transformStamped);
+        // ROS_INFO_STREAM("Transform: " << transformStamped);
         tf2::fromMsg(transformStamped.transform.rotation, cameraQuat);
         rotMatrix = tf2::Matrix3x3(cameraQuat);
     } catch (tf2::TransformException &ex) {
@@ -182,8 +188,9 @@ int localTP::executePICK(std::vector<red_msgs::ManipulationObject> & objects) {
     int actualObjectID = 0;
 
     // Fill objects
-    for (int i = 0; i < objects.size(); ++i)
-        objects[i].dest = -1;
+    for (int i = 0; i < objects.size(); ++i) {
+        objects[i].dest = 0;
+    }
 
     for (int j = 0; j < regonizedPoses.size(); ++j) {
 
@@ -193,10 +200,10 @@ int localTP::executePICK(std::vector<red_msgs::ManipulationObject> & objects) {
         /// 2 - object not find
 
         actualObjectID = j;
-        objectIndexOfMessage = findObjectIndexByID(objects, actualObjectID);
+        objectIndexOfMessage = findObjectIndexByID(objects, objIdenifiers[actualObjectID]);
         objects[objectIndexOfMessage].dest = 0;
-        if (!objectIndexOfMessage) {
-            ROS_WARN("Object not needed");
+        if (objectIndexOfMessage == -1) {
+            ROS_WARN("Object ids not equal");
             continue;
         }
 
@@ -226,7 +233,7 @@ int localTP::executePICK(std::vector<red_msgs::ManipulationObject> & objects) {
         ros::Duration(3).sleep();
 
         // Communicate with camera
-        ROS_INFO("[LTP] Set request to camera with mode 2.");
+        ROS_INFO("[LTP] Set request to camera with mode 2.\t | id( " << objIdenifiers[actualObjectID] <<  ")");
         cameraTask.request.mode = 2;
         cameraTask.request.request_id = cameraTask.response.ids[actualObjectID];
         callCamera(cameraTask);
@@ -238,12 +245,14 @@ int localTP::executePICK(std::vector<red_msgs::ManipulationObject> & objects) {
         firstPose.x = cameraTask.response.poses[0].x;
         firstPose.y = cameraTask.response.poses[0].y;
         firstPose.z = cameraTask.response.poses[0].z + 0.1;
+        firstPose.theta = 3.1415;
         firstPose.psi = -cameraTask.response.poses[0].psi;
 
         secondPose = firstPose;
-        secondPose.z -= 0.1;
+        secondPose.z -= 0.095;
 
-        ROS_WARN("[LTP] PICK THE Objects!!!!");
+        // Pick object from table
+        ROS_WARN_STREAM("[LTP] PICK THE Objects!!!!");
         manipPoses.request.poses.push_back(firstPose);
         manipPoses.request.poses.push_back(secondPose);
         std::cout << "INFO: ++++++++++++++++++++++++++\n"
@@ -255,31 +264,45 @@ int localTP::executePICK(std::vector<red_msgs::ManipulationObject> & objects) {
             std::cout << "\t Successfull." << std::endl;
         } else {
             ROS_ERROR("ManipulationLineTrjClient is not active.");
+            continue;
         }
         manipPoses.request.poses.clear();
         ros::service::call("grasp", empty);
+        manipPoses.request.poses.push_back(secondPose);
+        manipPoses.request.poses.push_back(firstPose);
+        if (manipulationLineTrjClient.call(manipPoses)) {
+            std::cout << "\t Successfull." << std::endl;
+        } else {
+            ROS_ERROR("ManipulationLineTrjClient is not active.");
+        }
+        manipPoses.request.poses.clear();
 
-        // secondPose = objectsContainer.getFreeContainerPoseAndSetID(actualObjectID);
-        // firstPose = secondPose;
-        // firstPose.z += 0.1;
+        secondPose = objectsContainer.getFreeContainerPoseAndSetID(objIdenifiers[actualObjectID]);
+        firstPose = secondPose;
+        firstPose.z += 0.1;
 
         // TODO move to initial position by the segmental
 
-        // ROS_WARN("[LTP] PLACE TO TABLE Objects!!!!");
-        // manipPoses.request.poses.push_back(firstPose);
-        // manipPoses.request.poses.push_back(secondPose);
-        // std::cout << "INFO: ++++++++++++++++++++++++++\n"
-        //     << manipPoses.request.poses[0] << std::endl;
-        //         std::cout << "INFO: ++++++++++++++++++++++++++\n"
-        //     << manipPoses.request.poses[1] << std::endl;
+        ROS_WARN("[LTP] PLACE TO TABLE Objects!!!!");
+        manipPoses.request.poses.push_back(firstPose);
+        manipPoses.request.poses.push_back(secondPose);
+        manipPoses.request.vel = 1;
+        manipPoses.request.accel = 0.5;
+        std::cout << "INFO: ++++++++++++++++++++++++++\n"
+            << manipPoses.request.poses[0] << std::endl;
+                std::cout << "INFO: ++++++++++++++++++++++++++\n"
+            << manipPoses.request.poses[1] << std::endl;
 
-        // if (manipulationLineTrjClient.call(manipPoses)) {
-        //     std::cout << "\t Successfull." << std::endl;
-        // } else {
-        //     ROS_ERROR("ManipulationLineTrjClient is not active.");
-        // }
-        // manipPoses.request.poses.clear();
-        // ros::service::call("release_arm", empty);
+        if (manipulationLineTrjClient.call(manipPoses)) {
+            std::cout << "\t Successfull." << std::endl;
+        } else {
+            ROS_ERROR("ManipulationLineTrjClient is not active.");
+            continue;
+        }
+        manipPoses.request.poses.clear();
+        manipPoses.request.vel = 0;
+        manipPoses.request.accel = 0;
+        ros::service::call("release_arm", empty);
         objects[objectIndexOfMessage].dest = 1;
 
         ROS_INFO("[LTP] recognPose: [%f, %f, %f, %f, %f]", recognPose.x, recognPose.y, recognPose.z, recognPose.theta, recognPose.psi);
@@ -305,6 +328,7 @@ int localTP::executePLACE(std::vector<red_msgs::ManipulationObject> & objects) {
 void localTP::callCamera(red_msgs::CameraTask & task) {
     if (compVisionClient.call(task)) {
         ROS_INFO("Successfull");
+        std::cout << "===============================================" << std::endl;
         cameraError = task.response.error;
         std::cout << "Error: " << cameraError << std::endl;
         for (size_t i = 0; i < task.response.poses.size(); ++i) {
@@ -315,6 +339,7 @@ void localTP::callCamera(red_msgs::CameraTask & task) {
             std::cout << "Id: " << i << ": \t" << task.response.ids[i]<< std::endl;
             std::cout << "------------------------------------------" << std::endl;
         }
+        std::cout << "===============================================" << std::endl;
     } else {
         ROS_ERROR("CompVisionClient is not active.");
     }
@@ -327,7 +352,12 @@ void localTP::callCamera(red_msgs::CameraTask & task) {
         double psi = 0;
         // psi = task.response.poses[0].psi % (2*M_PI);
         psi = std::fmod(task.response.poses[0].psi, 2*M_PI);
-        if (abs(psi) > 100*M_PI/180)
+        if (std::abs(psi) > M_PI) {
+            task.response.poses[0].psi -= sign(psi)*2*M_PI;
+            psi -= sign(psi)*2*M_PI;
+            ROS_ERROR_STREAM("Angle > " << 2*M_PI << " | sign psi: " << sign(psi)*2*M_PI);
+        }
+        if (std::abs(psi) > 100*M_PI/180)
             task.response.poses[0].psi += -sign(psi)*M_PI;
 
     }
