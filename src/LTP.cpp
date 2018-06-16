@@ -101,6 +101,9 @@ localTP::localTP(ros::NodeHandle & n, Configuration conf) :
     objectsContainer.poses[2].z = -0.02;
     objectsContainer.poses[2].theta = -3.1415;
     objectsContainer.poses[2].psi = 0.25;
+
+    // Camera Research configuration
+    cameraResearchAngleStep = M_PI/3;
 }
 
 localTP::~localTP()
@@ -140,6 +143,7 @@ int localTP::executePICK(std::vector<red_msgs::ManipulationObject> & objects) {
     recognPose.theta = 3.1415; recognPose.psi = 0;
     firstPose.theta = 3.1415;
     secondPose.theta = 3.1415;
+    initialResearchAngle = atan2(recognPose.y, recognPose.x);
 
     ROS_INFO("[LTP] Go to first position.");
     manipPoses.request.poses.push_back(recognPose);
@@ -151,18 +155,16 @@ int localTP::executePICK(std::vector<red_msgs::ManipulationObject> & objects) {
     manipPoses.request.poses.clear();
     ros::Duration(1).sleep();
 
+    std::vector<red_msgs::Pose> recognizedPoses;
+    std::vector<long int> objIdenifiers;
+
     // Communicate with camera
     ROS_INFO("[LTP] Set request to camera with mode 1.");
-    red_msgs::CameraTask cameraTask;
-    cameraTask.request.mode = 1;
-    callCamera(cameraTask);
+    researchTableByCamera(recognizedPoses, objIdenifiers);
     if (cameraError == 1) {
         cameraError = 0;
     }
-
-    std::vector<red_msgs::Pose> regonizedPoses = cameraTask.response.poses;
-    std::vector<long int> objIdenifiers = cameraTask.response.ids;
-    ROS_INFO_STREAM("Finded OBJECTS num: " << regonizedPoses.size());
+    ROS_INFO_STREAM("Finded OBJECTS num: " << recognizedPoses.size());
 
     // Activate tf for search transform
     tf2_ros::Buffer tfBuffer(ros::Duration(10));
@@ -192,9 +194,10 @@ int localTP::executePICK(std::vector<red_msgs::ManipulationObject> & objects) {
         objects[i].dest = 0;
     }
 
-    for (int j = 0; j < regonizedPoses.size(); ++j) {
+    red_msgs::CameraTask cameraTask;
+    for (int j = 0; j < recognizedPoses.size(); ++j) {
 
-        /// Desk modes:
+        /// Dest modes:
         /// 0 - object is not pick
         /// 1 - object is pick
         /// 2 - object not find
@@ -208,8 +211,7 @@ int localTP::executePICK(std::vector<red_msgs::ManipulationObject> & objects) {
         }
 
         // Find manipulator configuration for optical axis of camera
-        objectTransform = regonizedPoses[actualObjectID];
-        optq(0) = atan2(recognPose.y, recognPose.x);
+        objectTransform = recognizedPoses[actualObjectID];
 
         // Find desired leinght of z axis
         a2 = camTransx*camTransx + camTransy*camTransy - (objectTransform.x*objectTransform.x + objectTransform.y*objectTransform.y);
@@ -219,18 +221,14 @@ int localTP::executePICK(std::vector<red_msgs::ManipulationObject> & objects) {
 
         ytrans = camTransy + h*zy;
         xtrans = camTransx + h*zx;
-        optq(0) += atan2(objectTransform.y, objectTransform.x)              // Desired vector
+        optq(0) = initialResearchAngle
+            + atan2(objectTransform.y, objectTransform.x)                   // Desired vector
             - atan2(ytrans, xtrans);                                        // Object translation
 
         makeYoubotArmOffsets(optq);
         ROS_INFO("Angle q1: %f", optq(0));
-
-        // Create message
-        std::vector<int> jnum = {0};
-        brics_actuator::JointPositions jointPositions = createArmPositionMsg(optq, jnum);
-        std::cout << jointPositions << std::endl;
-        armPublisher.publish(jointPositions);                               // Move to desired angle
-        ros::Duration(3).sleep();
+        std::vector<int> jnum = {1};
+        moveJoints(optq, jnum);
 
         // Communicate with camera
         ROS_INFO_STREAM("[LTP] Set request to camera with mode 2.\t | id( " << objIdenifiers[actualObjectID] <<  ")");
@@ -318,6 +316,63 @@ int localTP::executePICK(std::vector<red_msgs::ManipulationObject> & objects) {
     objectsContainer.printIDS();
 
     return 1;
+}
+
+bool localTP::researchTableByCamera(std::vector<red_msgs::Pose> recognizedPoses, std::vector<long int> objIdenifiers)
+{
+    int posesNum = 3;
+    double epsilon = 0.05;
+    std::vector<int> joint1 = {1};
+    JointValues currAng;
+    bool valid = true;
+    Vector3d poseDiff, currPose;
+    red_msgs::CameraTask cameraTask;
+    cameraTask.request.mode = 1;
+
+    currAng(0) = initialResearchAngle - cameraResearchAngleStep;
+    for (int i = 0; i < posesNum; ++i) {
+        // Move joint 1 to angle
+        moveJoints(currAng, joint1);
+
+        // Send task to camera with mode 1
+        callCamera(cameraTask);
+
+        // Check camera task size
+        if (cameraTask.response.poses.empty())
+            return false;
+
+        for (int j = 0; j < cameraTask.response.poses.size(); ++j) {
+            currPose = Vector3d(cameraTask.response.poses[j].x, cameraTask.response.poses[j].y, cameraTask.response.poses[j].z);
+
+            // TODO check similarity of recognized objects
+            // Check unique of object
+            for (int k = 0; k < objIdenifiers.size(); ++k) {
+                poseDiff = currPose - Vector3d(recognizedPoses[k].x, recognizedPoses[k].y, recognizedPoses[k].z);
+                ROS_INFO_STREAM("[LTP] --- > Object poseDiff.norm() " << poseDiff.norm());
+                if (objIdenifiers[k] == cameraTask.response.ids[j] && poseDiff.norm() < epsilon) {
+                    valid = false;
+                    break;
+                }
+            }
+            if (valid) {
+                recognizedPoses.push_back(cameraTask.response.poses[j]);
+                objIdenifiers.push_back(cameraTask.response.ids[j]);
+            }
+            valid = true;
+        }
+
+
+        currAng(0) += cameraResearchAngleStep;
+    }
+}
+
+bool localTP::moveJoints(JointValues angle, std::vector<int> jointNum)
+{
+    // Create message
+    brics_actuator::JointPositions jointPositions = createArmPositionMsg(angle, jointNum);
+    // std::cout << jointPositions << std::endl;
+    // Move to desired angle
+    armPublisher.publish(jointPositions);
 }
 
 int localTP::executePLACE(std::vector<red_msgs::ManipulationObject> & objects) {

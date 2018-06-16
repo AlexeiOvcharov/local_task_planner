@@ -109,6 +109,13 @@ class localTP
         int executePICK(std::vector<red_msgs::ManipulationObject> & objects);
         int executePLACE(std::vector<red_msgs::ManipulationObject> & objects);
 
+        // Camera loock to table from 3 selected arm positions.
+        // Function return all recognize object positions and their identificators
+        bool researchTableByCamera(std::vector<red_msgs::Pose> regonizedPoses, std::vector<long int> objIdenifiers);
+
+        // Move first joint of manipulator
+        bool moveJoints(JointValues angle, std::vector<int> jointNum);
+
         ros::NodeHandle nh;
 
         // Container for objects (table behind youbot)
@@ -139,6 +146,12 @@ class localTP
 
         // Actions
         actionlib::SimpleActionServer<red_msgs::LTPTaskAction> localTaskServer;
+
+        // Initial Angle of joint 1 for researching tabole
+        int initialResearchAngle;
+
+        // Step of angle of joint 1 for researching table
+        int cameraResearchAngleStep;
 };
 
 #endif
