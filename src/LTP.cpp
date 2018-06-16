@@ -233,7 +233,7 @@ int localTP::executePICK(std::vector<red_msgs::ManipulationObject> & objects) {
         ros::Duration(3).sleep();
 
         // Communicate with camera
-        ROS_INFO("[LTP] Set request to camera with mode 2.\t | id( " << objIdenifiers[actualObjectID] <<  ")");
+        ROS_INFO_STREAM("[LTP] Set request to camera with mode 2.\t | id( " << objIdenifiers[actualObjectID] <<  ")");
         cameraTask.request.mode = 2;
         cameraTask.request.request_id = cameraTask.response.ids[actualObjectID];
         callCamera(cameraTask);
