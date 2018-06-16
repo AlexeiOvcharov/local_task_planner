@@ -111,7 +111,7 @@ class localTP
 
         // Camera loock to table from 3 selected arm positions.
         // Function return all recognize object positions and their identificators
-        bool researchTableByCamera(std::vector<red_msgs::Pose> regonizedPoses, std::vector<long int> objIdenifiers);
+        bool researchTableByCamera(std::vector<red_msgs::Pose> & regonizedPoses, std::vector<long int> & objIdenifiers);
 
         // Move first joint of manipulator
         bool moveJoints(JointValues angle, std::vector<int> jointNum);

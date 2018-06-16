@@ -9,6 +9,8 @@
 #define COLOR_GREEN     "\033[32m"
 #define COLOR_YELLOW    "\033[33m"
 
+#define RESEARCH_TABLE_DEBUG true
+
 #include <local_task_planner/LTP.h>
 
 // TF
@@ -86,7 +88,8 @@ localTP::localTP(ros::NodeHandle & n, Configuration conf) :
     // Setup start recognize pose
     startPose.x = 0.24; startPose.y = 0; startPose.z = 0.05;
     startPose.theta = 3.1415; startPose.psi = 0;
-    initialResearchAngle = atan2(startPose.y, startPose.x);
+    initialResearchAngle = 2.9496064359 - atan2(startPose.y, startPose.x);
+    ROS_WARN_STREAM("Initial Research angle: " << initialResearchAngle);
 
     // Setup containers
     objectsContainer.poses[0].x = -0.37;
@@ -108,7 +111,7 @@ localTP::localTP(ros::NodeHandle & n, Configuration conf) :
     objectsContainer.poses[2].psi = 0.25;
 
     // Camera Research configuration
-    cameraResearchAngleStep = M_PI/3;
+    cameraResearchAngleStep = M_PI/6;
 
     red_msgs::ArmPoses manipPoses;
     ROS_INFO("[LTP] Go to first position.");
@@ -173,44 +176,48 @@ int localTP::executePICK(std::vector<red_msgs::ManipulationObject> & objects) {
     tf2_ros::TransformListener tfListener(tfBuffer);
 
     JointValues optq; red_msgs::Pose objectTransform;
-    geometry_msgs::TransformStamped transformStamped;
-    tf2::Quaternion cameraQuat;
-    tf2::Matrix3x3 rotMatrix;
-    try{
-        transformStamped = tfBuffer.lookupTransform("arm_link_1", "realsense_camera", ros::Time(0), ros::Duration(3.0));
-        // ROS_INFO_STREAM("Transform: " << transformStamped);
-        tf2::fromMsg(transformStamped.transform.rotation, cameraQuat);
-        rotMatrix = tf2::Matrix3x3(cameraQuat);
-    } catch (tf2::TransformException &ex) {
-        ROS_WARN("%s",ex.what());
-        ros::Duration(1.0).sleep();
-    }
-    double camTransx = transformStamped.transform.translation.x;
-    double camTransy = transformStamped.transform.translation.y;
-    double zx = rotMatrix[0][2]; double zy = rotMatrix[1][2];
+    // geometry_msgs::TransformStamped transformStamped;
+    // tf2::Quaternion cameraQuat;
+    // tf2::Matrix3x3 rotMatrix;
+    // try{
+    //     transformStamped = tfBuffer.lookupTransform("arm_link_1", "realsense_camera", ros::Time(0), ros::Duration(3.0));
+    //     // ROS_INFO_STREAM("Transform: " << transformStamped);
+    //     tf2::fromMsg(transformStamped.transform.rotation, cameraQuat);
+    //     rotMatrix = tf2::Matrix3x3(cameraQuat);
+    // } catch (tf2::TransformException &ex) {
+    //     ROS_WARN("%s",ex.what());
+    //     ros::Duration(1.0).sleep();
+    // }
+    double camTransx = startPose.x;
+    double camTransy = startPose.y;
+    double zx = sin(startPose.theta)*cos(startPose.psi); double zy = sin(startPose.theta)*sin(startPose.psi);
     double a1 = zx*camTransx + zy*camTransy, a2 = 0, h = 0, xtrans = 0, ytrans = 0;
     int actualObjectID = 0;
 
     // Fill objects
     for (int i = 0; i < objects.size(); ++i) {
-        objects[i].dest = 0;
+        objects[i].dest = 2;
     }
+
+    if (RESEARCH_TABLE_DEBUG)
+        return true;
 
     red_msgs::CameraTask cameraTask;
     for (int j = 0; j < recognizedPoses.size(); ++j) {
 
         /// Dest modes:
-        /// 0 - object is not pick
+        /// 0 - object is not pick | desired objects more than object containers
         /// 1 - object is pick
         /// 2 - object not find
+        /// 3 - object is not pick | fisicly cant find
 
         actualObjectID = j;
         objectIndexOfMessage = findObjectIndexByID(objects, objIdenifiers[actualObjectID]);
-        objects[objectIndexOfMessage].dest = 0;
         if (objectIndexOfMessage == -1) {
             ROS_WARN("Object ids not equal");
             continue;
         }
+        objects[objectIndexOfMessage].dest = 0;
 
         // Find manipulator configuration for optical axis of camera
         objectTransform = recognizedPoses[actualObjectID];
@@ -223,13 +230,13 @@ int localTP::executePICK(std::vector<red_msgs::ManipulationObject> & objects) {
 
         ytrans = camTransy + h*zy;
         xtrans = camTransx + h*zx;
-        optq(0) = initialResearchAngle
-            + atan2(objectTransform.y, objectTransform.x)                   // Desired vector
+        optq(0) = atan2(objectTransform.y, objectTransform.x)               // Desired vector
             - atan2(ytrans, xtrans);                                        // Object translation
-
         makeYoubotArmOffsets(optq);
+        optq += initialResearchAngle;
+
         ROS_INFO("Angle q1: %f", optq(0));
-        std::vector<int> jnum = {1};
+        std::vector<int> jnum = {0};
         moveJoints(optq, jnum);
 
         // Communicate with camera
@@ -319,11 +326,12 @@ int localTP::executePICK(std::vector<red_msgs::ManipulationObject> & objects) {
     return 1;
 }
 
-bool localTP::researchTableByCamera(std::vector<red_msgs::Pose> recognizedPoses, std::vector<long int> objIdenifiers)
+bool localTP::researchTableByCamera(std::vector<red_msgs::Pose> & recognizedPoses, std::vector<long int> & objIdenifiers)
 {
     int posesNum = 3;
     double epsilon = 0.05;
-    std::vector<int> joint1 = {1};
+    int initialSize = recognizedPoses.size();
+    std::vector<int> joint1 = {0};
     JointValues currAng;
     bool valid = true;
     Vector3d poseDiff, currPose;
@@ -334,13 +342,14 @@ bool localTP::researchTableByCamera(std::vector<red_msgs::Pose> recognizedPoses,
     for (int i = 0; i < posesNum; ++i) {
         // Move joint 1 to angle
         moveJoints(currAng, joint1);
+        ros::Duration(2).sleep();
 
         // Send task to camera with mode 1
         callCamera(cameraTask);
 
         // Check camera task size
         if (cameraTask.response.poses.empty())
-            return false;
+            continue;
 
         for (int j = 0; j < cameraTask.response.poses.size(); ++j) {
             currPose = Vector3d(cameraTask.response.poses[j].x, cameraTask.response.poses[j].y, cameraTask.response.poses[j].z);
@@ -365,6 +374,12 @@ bool localTP::researchTableByCamera(std::vector<red_msgs::Pose> recognizedPoses,
 
         currAng(0) += cameraResearchAngleStep;
     }
+    if (recognizedPoses.size() == initialSize)
+        return false;
+
+    for (int i = 0; i < recognizedPoses.size(); ++i)
+        ROS_INFO_STREAM("Rcognize: (" << objIdenifiers[i] << ")");
+    return true;
 }
 
 bool localTP::moveJoints(JointValues angle, std::vector<int> jointNum)
