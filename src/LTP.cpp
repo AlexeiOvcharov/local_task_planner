@@ -83,6 +83,11 @@ localTP::localTP(ros::NodeHandle & n, Configuration conf) :
     armPublisher = nh.advertise<brics_actuator::JointPositions> ("arm_1/arm_controller/position_command", 1);
     localTaskServer.start();
 
+    // Setup start recognize pose
+    startPose.x = 0.24; startPose.y = 0; startPose.z = 0.05;
+    startPose.theta = 3.1415; startPose.psi = 0;
+    initialResearchAngle = atan2(startPose.y, startPose.x);
+
     // Setup containers
     objectsContainer.poses[0].x = -0.37;
     objectsContainer.poses[0].y = 0;
@@ -104,6 +109,16 @@ localTP::localTP(ros::NodeHandle & n, Configuration conf) :
 
     // Camera Research configuration
     cameraResearchAngleStep = M_PI/3;
+
+    red_msgs::ArmPoses manipPoses;
+    ROS_INFO("[LTP] Go to first position.");
+    manipPoses.request.poses.push_back(startPose);
+    if (manipulationPointClient.call(manipPoses)) {
+        std::cout << "\t Successfull." << std::endl;
+    } else {
+        ROS_ERROR("ManipulatorPointClient is not active.");
+    }
+    ros::Duration(1).sleep();
 }
 
 localTP::~localTP()
@@ -133,27 +148,14 @@ int localTP::executePICK(std::vector<red_msgs::ManipulationObject> & objects) {
 
     ROS_INFO("[LTP] Start PICK execution");
 
-    red_msgs::Pose recognPose, firstPose, secondPose;
+    red_msgs::Pose firstPose, secondPose;
     red_msgs::ArmPoses manipPoses;
     std_srvs::Empty empty;
     int objectIndexOfMessage = 0;
 
     // Set initial position of manipulator for object recognition
-    recognPose.x = 0.24; recognPose.y = 0; recognPose.z = 0.05;
-    recognPose.theta = 3.1415; recognPose.psi = 0;
     firstPose.theta = 3.1415;
     secondPose.theta = 3.1415;
-    initialResearchAngle = atan2(recognPose.y, recognPose.x);
-
-    ROS_INFO("[LTP] Go to first position.");
-    manipPoses.request.poses.push_back(recognPose);
-    if (manipulationPointClient.call(manipPoses)) {
-        std::cout << "\t Successfull." << std::endl;
-    } else {
-        ROS_ERROR("ManipulatorPointClient is not active.");
-    }
-    manipPoses.request.poses.clear();
-    ros::Duration(1).sleep();
 
     std::vector<red_msgs::Pose> recognizedPoses;
     std::vector<long int> objIdenifiers;
@@ -303,8 +305,7 @@ int localTP::executePICK(std::vector<red_msgs::ManipulationObject> & objects) {
         ros::service::call("release_arm", empty);
         objects[objectIndexOfMessage].dest = 1;
 
-        ROS_INFO("[LTP] recognPose: [%f, %f, %f, %f, %f]", recognPose.x, recognPose.y, recognPose.z, recognPose.theta, recognPose.psi);
-        manipPoses.request.poses.push_back(recognPose);
+        manipPoses.request.poses.push_back(startPose);
         if (manipulationPointClient.call(manipPoses)) {
             std::cout << "\t Successfull." << std::endl;
         } else {

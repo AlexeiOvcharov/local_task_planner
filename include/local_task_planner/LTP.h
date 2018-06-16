@@ -127,6 +127,8 @@ class localTP
         // Offset of camera from link 5
         red_msgs::Pose cameraOffset;
 
+        red_msgs::Pose startPose;
+
         // Client for communication with
         // Computor Vision step
         ros::ServiceClient compVisionClient;
