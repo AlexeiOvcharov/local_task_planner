@@ -10,6 +10,15 @@
 #include <red_msgs/LTPTaskAction.h>
 #include <red_msgs/ManipulationObject.h>
 
+// TF
+#include <tf2_ros/transform_listener.h>
+#include <tf2/LinearMath/Matrix3x3.h>
+#include <tf2/LinearMath/Vector3.h>
+#include <tf2/convert.h>
+#include <tf2/impl/utils.h>
+#include <tf2/utils.h>
+#include <geometry_msgs/TransformStamped.h>
+
 #include <std_srvs/Empty.h>
 
 #include <actionlib/server/simple_action_server.h>
@@ -128,6 +137,10 @@ class localTP
         red_msgs::Pose cameraOffset;
 
         red_msgs::Pose startPose;
+
+        // Transformation of camera at cameraRecognizePosition
+        tf2::Vector3 cameraTranslation;
+        tf2::Matrix3x3 cameraRotMatrix;
 
         // Client for communication with
         // Computor Vision step

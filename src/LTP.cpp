@@ -13,15 +13,6 @@
 
 #include <local_task_planner/LTP.h>
 
-// TF
-#include <tf2_ros/transform_listener.h>
-#include <tf2/LinearMath/Matrix3x3.h>
-#include <tf2/LinearMath/Vector3.h>
-#include <tf2/convert.h>
-#include <tf2/impl/utils.h>
-#include <tf2/utils.h>
-#include <geometry_msgs/TransformStamped.h>
-
 // Other
 #include <brics_actuator/JointPositions.h>
 #include <std_srvs/Empty.h>
@@ -123,6 +114,22 @@ localTP::localTP(ros::NodeHandle & n, Configuration conf) :
         ROS_ERROR("ManipulatorPointClient is not active.");
     }
     ros::Duration(1).sleep();
+
+    // Activate tf for search transform
+    tf2_ros::Buffer tfBuffer(ros::Duration(10));
+    tf2_ros::TransformListener tfListener(tfBuffer);
+    geometry_msgs::TransformStamped transformStamped;
+    tf2::Quaternion cameraQuat;
+    try{
+        transformStamped = tfBuffer.lookupTransform("arm_link_1", "realsense_camera", ros::Time(0), ros::Duration(3.0));
+        // ROS_INFO_STREAM("Transform: " << transformStamped);
+        tf2::fromMsg(transformStamped.transform.rotation, cameraQuat);
+        tf2::fromMsg(transformStamped.transform.translation, cameraTranslation);
+        cameraRotMatrix = tf2::Matrix3x3(cameraQuat);
+    } catch (tf2::TransformException &ex) {
+        ROS_WARN("%s",ex.what());
+        ros::Duration(1.0).sleep();
+    }
 }
 
 localTP::~localTP()
@@ -177,21 +184,9 @@ int localTP::executePICK(std::vector<red_msgs::ManipulationObject> & objects) {
     tf2_ros::TransformListener tfListener(tfBuffer);
 
     JointValues optq; red_msgs::Pose objectTransform;
-    // geometry_msgs::TransformStamped transformStamped;
-    // tf2::Quaternion cameraQuat;
-    // tf2::Matrix3x3 rotMatrix;
-    // try{
-    //     transformStamped = tfBuffer.lookupTransform("arm_link_1", "realsense_camera", ros::Time(0), ros::Duration(3.0));
-    //     // ROS_INFO_STREAM("Transform: " << transformStamped);
-    //     tf2::fromMsg(transformStamped.transform.rotation, cameraQuat);
-    //     rotMatrix = tf2::Matrix3x3(cameraQuat);
-    // } catch (tf2::TransformException &ex) {
-    //     ROS_WARN("%s",ex.what());
-    //     ros::Duration(1.0).sleep();
-    // }
-    double camTransx = startPose.x;
-    double camTransy = startPose.y;
-    double zx = sin(startPose.theta)*cos(startPose.psi); double zy = sin(startPose.theta)*sin(startPose.psi);
+    double camTransx = cameraTranslation.m_floats[0];
+    double camTransy = cameraTranslation.m_floats[1];
+    double zx = cameraRotMatrix[0][2]; double zy = cameraRotMatrix[1][2];
     double a1 = zx*camTransx + zy*camTransy, a2 = 0, h = 0, xtrans = 0, ytrans = 0;
     int actualObjectID = 0;
 
@@ -239,26 +234,27 @@ int localTP::executePICK(std::vector<red_msgs::ManipulationObject> & objects) {
         ROS_INFO("Angle q1: %f", optq(0));
         std::vector<int> jnum = {0};
         moveJoints(optq, jnum);
+        ros::Duration(2).sleep();
 
         // Communicate with camera
         ROS_INFO_STREAM("[LTP] Set request to camera with mode 2.\t | id( " << objIdenifiers[actualObjectID] <<  ")");
-        // cameraTask.request.mode = 2;
-        // cameraTask.request.request_id = cameraTask.response.ids[actualObjectID];
-        // callCamera(cameraTask);
-        // if (cameraError == 1) {
-        //     cameraError = 0;
-        //     continue;
-        // }
+        cameraTask.request.mode = 2;
+        cameraTask.request.request_id = cameraTask.response.ids[actualObjectID];
+        callCamera(cameraTask);
+        if (cameraError == 1) {
+            cameraError = 0;
+            continue;
+        }
 
-        firstPose.x = objectTransform.x;
-        firstPose.y = objectTransform.y;
-        firstPose.z = objectTransform.z + 0.1;
-        firstPose.psi = -objectTransform.psi;
-        // firstPose.x = cameraTask.response.poses[0].x;
-        // firstPose.y = cameraTask.response.poses[0].y;
-        // firstPose.z = cameraTask.response.poses[0].z + 0.1;
+        // firstPose.x = objectTransform.x;
+        // firstPose.y = objectTransform.y;
+        // firstPose.z = objectTransform.z + 0.1;
+        // firstPose.psi = -objectTransform.psi;
+        firstPose.x = cameraTask.response.poses[0].x;
+        firstPose.y = cameraTask.response.poses[0].y;
+        firstPose.z = cameraTask.response.poses[0].z + 0.1;
         firstPose.theta = 3.1415;
-        // firstPose.psi = -cameraTask.response.poses[0].psi;
+        firstPose.psi = -cameraTask.response.poses[0].psi;
 
         secondPose = firstPose;
         secondPose.z -= 0.09;
