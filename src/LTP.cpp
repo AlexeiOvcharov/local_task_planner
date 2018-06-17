@@ -405,6 +405,103 @@ bool localTP::researchTableByCamera(std::vector<red_msgs::Pose> & recognizedPose
 
 int localTP::executePLACE(std::vector<red_msgs::ManipulationObject> & objects) {
 
+    ROS_INFO("[LTP] Start PlACE execution");
+    
+    red_msgs::Pose firstPose, secondPose;
+    red_msgs::ArmPoses manipPoses;
+    std_srvs::Empty empty;
+    geometry_msgs::Pose2D Pose;
+
+    int containerNumber;
+    int isMoveBaseSuccessful;
+    int currentPosition = 2; // Initial position
+    int indent = 0.05; // distannce between positions
+
+    for (int i; i < objects.size(); ++i) {
+
+        // First moving to object destination
+
+        // We have 5 positions for object placement
+        // |    |    |    |    |
+        // 0    1    2    3    4
+        //
+        // we start at position number 2
+        Pose.y = (objects[i].dest - currentPosition) * indent;
+
+        isMoveBaseSuccessful = moveBase(Pose);
+
+        if (isMoveBaseSuccessful == 1) {
+            currentPosition = objects[i].dest;
+            ROS_INFO_STREAM("[LTP] Successful base moving to position number " << currentPosition);
+        } else {
+            ROS_INFO("[LTP] Problems with moving base");
+            // TODO Add unsuccessful case
+        }
+
+        // Poses to picking from container
+        containerNumber = objectsContainer.getContainerByID(objects[i].obj);
+
+        secondPose = objectsContainer.poses[containerNumber];
+        firstPose = secondPose;
+        firstPose.z += 0.1;
+
+        manipPoses.request.vel = 1;
+        manipPoses.request.accel = 0.5;
+
+        ROS_WARN_STREAM("[LTP] PICK FROM CONTAINER THE Object!!!!");
+        manipPoses.request.poses.push_back(firstPose);
+        manipPoses.request.poses.push_back(secondPose);
+        std::cout << "INFO: ++++++++++++++++++++++++++\n"
+            << manipPoses.request.poses[0] << std::endl;
+                std::cout << "INFO: ++++++++++++++++++++++++++\n"
+            << manipPoses.request.poses[1] << std::endl;
+
+        if (manipulationLineTrjClient.call(manipPoses)) {
+            std::cout << "\t Successfull." << std::endl;
+        } else {
+            ROS_ERROR("ManipulationLineTrjClient is not active.");
+            continue;
+        }
+        manipPoses.request.poses.clear();
+        ros::service::call("grasp", empty);
+
+        // Poses to placing to table
+        // TODO angles and table height 
+        secondPose.x = 0.35;
+        secondPose.y = 0;
+        // secondPose.z = ;
+        // secondPose.theta = 3.1415;
+        // secondPose.psi = ;
+        firstPose = secondPose;
+        firstPose.z += 0.1;
+
+        manipPoses.request.vel = 1;
+        manipPoses.request.accel = 0.5;
+
+        ROS_WARN_STREAM("[LTP] PLACE TO DESTINATION THE Object!!!!");
+        manipPoses.request.poses.push_back(firstPose);
+        manipPoses.request.poses.push_back(secondPose);
+        std::cout << "INFO: ++++++++++++++++++++++++++\n"
+            << manipPoses.request.poses[0] << std::endl;
+                std::cout << "INFO: ++++++++++++++++++++++++++\n"
+            << manipPoses.request.poses[1] << std::endl;
+
+        if (manipulationLineTrjClient.call(manipPoses)) {
+            std::cout << "\t Successfull." << std::endl;
+        } else {
+            ROS_ERROR("ManipulationLineTrjClient is not active.");
+            continue;
+        }
+
+        manipPoses.request.poses.clear();
+        manipPoses.request.vel = 0;
+        manipPoses.request.accel = 0;
+        ros::service::call("release_arm", empty);
+
+        // clean container
+        objectsContainer.clearContainer(containerNumber);
+    }
+
     return 1;
 }
 
