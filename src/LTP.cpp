@@ -9,7 +9,7 @@
 #define COLOR_GREEN     "\033[32m"
 #define COLOR_YELLOW    "\033[33m"
 
-#define RESEARCH_TABLE_DEBUG true
+#define RESEARCH_TABLE_DEBUG false
 
 #include <local_task_planner/LTP.h>
 
@@ -31,7 +31,8 @@ int findObjectIndexByID(const std::vector<red_msgs::ManipulationObject> & object
     for (size_t i = 0; i < objects.size(); ++i) {
         ROS_WARN_STREAM("ID: (" << objects[i].obj << " | " << id << ")\t Dest: " << objects[i].dest);
 
-        if (objects[i].obj == id && objects[i].dest == 0) {
+        if (objects[i].obj == id && objects[i].dest == 2) {
+            ROS_WARN_STREAM("Selected object: " << id);
             return i;
         }
     }
@@ -92,19 +93,19 @@ localTP::localTP(ros::NodeHandle & n, Configuration conf) :
     ROS_WARN_STREAM("Initial Research angle: " << initialResearchAngle);
 
     // Setup containers
-    objectsContainer.poses[0].x = -0.37;
+    objectsContainer.poses[0].x = -0.33;
     objectsContainer.poses[0].y = 0;
     objectsContainer.poses[0].z = -0.02;
     objectsContainer.poses[0].theta = -3.1415;
     objectsContainer.poses[0].psi = 0;
 
-    objectsContainer.poses[1].x = -0.37;
+    objectsContainer.poses[1].x = -0.33;
     objectsContainer.poses[1].y = 0.1;
     objectsContainer.poses[1].z = -0.02;
     objectsContainer.poses[1].theta = -3.1415;
     objectsContainer.poses[1].psi = -0.25;
 
-    objectsContainer.poses[2].x = -0.37;
+    objectsContainer.poses[2].x = -0.33;
     objectsContainer.poses[2].y = -0.1;
     objectsContainer.poses[2].z = -0.02;
     objectsContainer.poses[2].theta = -3.1415;
@@ -241,22 +242,26 @@ int localTP::executePICK(std::vector<red_msgs::ManipulationObject> & objects) {
 
         // Communicate with camera
         ROS_INFO_STREAM("[LTP] Set request to camera with mode 2.\t | id( " << objIdenifiers[actualObjectID] <<  ")");
-        cameraTask.request.mode = 2;
-        cameraTask.request.request_id = cameraTask.response.ids[actualObjectID];
-        callCamera(cameraTask);
-        if (cameraError == 1) {
-            cameraError = 0;
-            continue;
-        }
+        // cameraTask.request.mode = 2;
+        // cameraTask.request.request_id = cameraTask.response.ids[actualObjectID];
+        // callCamera(cameraTask);
+        // if (cameraError == 1) {
+        //     cameraError = 0;
+        //     continue;
+        // }
 
-        firstPose.x = cameraTask.response.poses[0].x;
-        firstPose.y = cameraTask.response.poses[0].y;
-        firstPose.z = cameraTask.response.poses[0].z + 0.1;
+        firstPose.x = objectTransform.x;
+        firstPose.y = objectTransform.y;
+        firstPose.z = objectTransform.z + 0.1;
+        firstPose.psi = -objectTransform.psi;
+        // firstPose.x = cameraTask.response.poses[0].x;
+        // firstPose.y = cameraTask.response.poses[0].y;
+        // firstPose.z = cameraTask.response.poses[0].z + 0.1;
         firstPose.theta = 3.1415;
-        firstPose.psi = -cameraTask.response.poses[0].psi;
+        // firstPose.psi = -cameraTask.response.poses[0].psi;
 
         secondPose = firstPose;
-        secondPose.z -= 0.095;
+        secondPose.z -= 0.09;
 
         // Pick object from table
         ROS_WARN_STREAM("[LTP] PICK THE Objects!!!!");
@@ -377,8 +382,10 @@ bool localTP::researchTableByCamera(std::vector<red_msgs::Pose> & recognizedPose
     if (recognizedPoses.size() == initialSize)
         return false;
 
-    for (int i = 0; i < recognizedPoses.size(); ++i)
+    for (int i = 0; i < recognizedPoses.size(); ++i) {
         ROS_INFO_STREAM("Rcognize: (" << objIdenifiers[i] << ")");
+        std::cout << recognizedPoses[i] << std::endl;
+    }
     return true;
 }
 
@@ -419,17 +426,19 @@ void localTP::callCamera(red_msgs::CameraTask & task) {
         return;
     }
 
-    if (task.request.mode == 2) {
+    for (int i = 0; i < task.response.poses.size(); ++i) {
         double psi = 0;
         // psi = task.response.poses[0].psi % (2*M_PI);
-        psi = std::fmod(task.response.poses[0].psi, 2*M_PI);
+        psi = std::fmod(task.response.poses[i].psi, 2*M_PI);
         if (std::abs(psi) > M_PI) {
-            task.response.poses[0].psi -= sign(psi)*2*M_PI;
+            task.response.poses[i].psi -= sign(psi)*2*M_PI;
             psi -= sign(psi)*2*M_PI;
             ROS_ERROR_STREAM("Angle > " << 2*M_PI << " | sign psi: " << sign(psi)*2*M_PI);
         }
-        if (std::abs(psi) > 100*M_PI/180)
-            task.response.poses[0].psi += -sign(psi)*M_PI;
-
+        if (std::abs(psi) > 100*M_PI/180) {
+            task.response.poses[i].psi += -sign(psi)*M_PI;
+            ROS_ERROR_STREAM("psi > : " << 100*M_PI/180 << " \t result: " << task.response.poses[i].psi);
+        }
     }
+
 }
