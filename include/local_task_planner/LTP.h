@@ -82,7 +82,7 @@ struct Container
     {
         for (int i = 0; i < size; ++i) {
             if (isEmpty(i))
-                return false
+                return false;
         }
 
     }
@@ -179,10 +179,10 @@ class localTP
         actionlib::SimpleActionClient<red_msgs::DestAction> destNaviClient;
 
         // Initial Angle of joint 1 for researching tabole
-        int initialResearchAngle;
+        double initialResearchAngle;
 
         // Step of angle of joint 1 for researching table
-        int cameraResearchAngleStep;
+        double cameraResearchAngleStep;
 
         // Base positions
         std::vector<geometry_msgs::Pose2D> positionsOfBase;

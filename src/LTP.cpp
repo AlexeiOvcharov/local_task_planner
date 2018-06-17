@@ -42,7 +42,9 @@ brics_actuator::JointPositions createArmPositionMsg(const JointValues & jointAng
         jointName << "arm_joint_" << (number[i] + 1);
         jointValue.joint_uri = jointName.str();
         jointValue.unit = "rad";
-        jointValue.value = jointAngles(number[i]);
+        if (number[i] == 0 && std::abs(jointAngles(number[i])) > M_PI/2) {
+            jointValue.value = sign(jointAngles(number[i]))*M_PI/2;
+        } else jointValue.value = jointAngles(number[i]);
         jointPositions.positions.push_back(jointValue);
     }
     return jointPositions;
@@ -104,7 +106,7 @@ localTP::localTP(ros::NodeHandle & n, Configuration conf) :
     objectsContainer.poses[2].psi = 0.25;
 
     // Camera Research configuration
-    cameraResearchAngleStep = M_PI/6;
+    cameraResearchAngleStep = 30*M_PI/180;
 
     red_msgs::ArmPoses manipPoses;
     ROS_INFO("[LTP] Go to first position.");
@@ -122,7 +124,7 @@ localTP::localTP(ros::NodeHandle & n, Configuration conf) :
     geometry_msgs::TransformStamped transformStamped;
     tf2::Quaternion cameraQuat;
     try{
-        transformStamped = tfBuffer.lookupTransform("arm_link_1", "realsense_camera", ros::Time(0), ros::Duration(3.0));
+        transformStamped = tfBuffer.lookupTransform("arm_link_0", "realsense_camera", ros::Time(0), ros::Duration(3.0));
         // ROS_INFO_STREAM("Transform: " << transformStamped);
         tf2::fromMsg(transformStamped.transform.rotation, cameraQuat);
         tf2::fromMsg(transformStamped.transform.translation, cameraTranslation);
@@ -425,8 +427,8 @@ int localTP::moveBase(geometry_msgs::Pose2D & Pose) {
             bool finished_before_timeout = destNaviClient.waitForResult(ros::Duration(20.0));
             // If action service finished, return:
             if (finished_before_timeout){
-                red_mgsg::DestResult result = destNaviClient.getResult();
-                if (result.has_got)
+                red_msgs::DestResultConstPtr result = destNaviClient.getResult();
+                if (result->has_got)
                     return 1;
                 else
                     return 2;
