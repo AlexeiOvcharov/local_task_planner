@@ -42,8 +42,12 @@ brics_actuator::JointPositions createArmPositionMsg(const JointValues & jointAng
         jointName << "arm_joint_" << (number[i] + 1);
         jointValue.joint_uri = jointName.str();
         jointValue.unit = "rad";
-        if (number[i] == 0 && std::abs(jointAngles(number[i])) > M_PI/2) {
-            jointValue.value = sign(jointAngles(number[i]))*M_PI/2;
+        if (number[i] == 0) {
+            if (jointAngles(number[i]) > 2.9496064359 + M_PI/2)
+                jointValue.value = 2.9496064359 + M_PI/2;
+            else if (jointAngles(number[i]) < 2.9496064359 - M_PI/2)
+                jointValue.value = 2.9496064359 - M_PI/2;
+            else jointValue.value = jointAngles(number[i]);
         } else jointValue.value = jointAngles(number[i]);
         jointPositions.positions.push_back(jointValue);
     }
