@@ -11,6 +11,8 @@
 
 #define RESEARCH_TABLE_DEBUG false
 
+#define q1_offset 2.9496064359
+
 #include <local_task_planner/LTP.h>
 
 // Other
@@ -43,10 +45,10 @@ brics_actuator::JointPositions createArmPositionMsg(const JointValues & jointAng
         jointValue.joint_uri = jointName.str();
         jointValue.unit = "rad";
         if (number[i] == 0) {
-            if (jointAngles(number[i]) > 2.9496064359 + M_PI/2)
-                jointValue.value = 2.9496064359 + M_PI/2;
-            else if (jointAngles(number[i]) < 2.9496064359 - M_PI/2)
-                jointValue.value = 2.9496064359 - M_PI/2;
+            if (jointAngles(number[i]) > q1_offset + M_PI/2)
+                jointValue.value = q1_offset + M_PI/2;
+            else if (jointAngles(number[i]) < q1_offset - M_PI/2)
+                jointValue.value = q1_offset - M_PI/2;
             else jointValue.value = jointAngles(number[i]);
         } else jointValue.value = jointAngles(number[i]);
         jointPositions.positions.push_back(jointValue);
@@ -87,7 +89,7 @@ localTP::localTP(ros::NodeHandle & n, Configuration conf) :
     // Setup start recognize pose
     startPose.x = 0.24; startPose.y = 0; startPose.z = 0.05;
     startPose.theta = 3.1415; startPose.psi = 0;
-    initialResearchAngle = 2.9496064359 - atan2(startPose.y, startPose.x);
+    initialResearchAngle = q1_offset - atan2(startPose.y, startPose.x);
     ROS_WARN_STREAM("Initial Research angle: " << initialResearchAngle);
 
     // Setup containers
@@ -237,7 +239,6 @@ int localTP::executePICK(std::vector<red_msgs::ManipulationObject> & objects) {
         optq(0) = atan2(objectTransform.y, objectTransform.x)               // Desired vector
             - atan2(ytrans, xtrans);                                        // Object translation
         makeYoubotArmOffsets(optq);
-        optq += initialResearchAngle;
 
         ROS_INFO("Angle q1: %f", optq(0));
         std::vector<int> jnum = {0};
@@ -247,7 +248,7 @@ int localTP::executePICK(std::vector<red_msgs::ManipulationObject> & objects) {
         // Communicate with camera
         ROS_INFO_STREAM("[LTP] Set request to camera with mode 2.\t | id( " << objIdenifiers[actualObjectID] <<  ")");
         cameraTask.request.mode = 2;
-        cameraTask.request.request_id = cameraTask.response.ids[actualObjectID];
+        cameraTask.request.request_id = objIdenifiers[actualObjectID];
         callCamera(cameraTask);
         if (cameraError == 1) {
             cameraError = 0;
