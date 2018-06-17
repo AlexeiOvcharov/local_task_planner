@@ -8,6 +8,7 @@
 #include <red_msgs/CameraTask.h>
 #include <red_msgs/ArmPoses.h>
 #include <red_msgs/LTPTaskAction.h>
+#include <red_msgs/DestAction.h>
 #include <red_msgs/ManipulationObject.h>
 
 // TF
@@ -22,6 +23,8 @@
 #include <std_srvs/Empty.h>
 
 #include <actionlib/server/simple_action_server.h>
+#include <actionlib/client/simple_action_client.h>
+#include <actionlib/client/terminal_state.h>
 
 struct Container
 {
@@ -51,7 +54,7 @@ struct Container
     }
 
     int getContainerByID(int id) {
-        for (int i = 0; i < ids.size(); ++i) {
+        for (int i = 0; i < size; ++i) {
             if (ids[i] == id)
                 return i;
         }
@@ -69,10 +72,19 @@ struct Container
     void printIDS()
     {
         std::cout << "------------------ IDS ------------------" << std::endl;
-        for (int i = 0; i < ids.size(); ++i) {
+        for (int i = 0; i < size; ++i) {
             std::cout << "id (" << i << ") ------------------------ " << ids[i] << std::endl;
         }
         std::cout << "/----------------- IDS -----------------/" << std::endl;
+    }
+
+    bool isFull()
+    {
+        for (int i = 0; i < size; ++i) {
+            if (isEmpty(i))
+                return false
+        }
+
     }
 
     size_t size;
@@ -118,6 +130,9 @@ class localTP
         int executePICK(std::vector<red_msgs::ManipulationObject> & objects);
         int executePLACE(std::vector<red_msgs::ManipulationObject> & objects);
 
+        // Function for moving base to desired vector by action client
+        int moveBase(geometry_msgs::Pose2D & Pose);
+
         // Camera loock to table from 3 selected arm positions.
         // Function return all recognize object positions and their identificators
         bool researchTableByCamera(std::vector<red_msgs::Pose> & regonizedPoses, std::vector<long int> & objIdenifiers);
@@ -161,12 +176,16 @@ class localTP
 
         // Actions
         actionlib::SimpleActionServer<red_msgs::LTPTaskAction> localTaskServer;
+        actionlib::SimpleActionClient<red_msgs::DestAction> destNaviClient;
 
         // Initial Angle of joint 1 for researching tabole
         int initialResearchAngle;
 
         // Step of angle of joint 1 for researching table
         int cameraResearchAngleStep;
+
+        // Base positions
+        std::vector<geometry_msgs::Pose2D> positionsOfBase;
 };
 
 #endif

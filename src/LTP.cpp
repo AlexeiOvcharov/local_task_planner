@@ -50,7 +50,8 @@ brics_actuator::JointPositions createArmPositionMsg(const JointValues & jointAng
 
 localTP::localTP(ros::NodeHandle & n, Configuration conf) :
     objectsContainer(3),
-    localTaskServer(n, "LTP", boost::bind(&localTP::localTaskCallback, this, _1), false)
+    localTaskServer(n, "LTP", boost::bind(&localTP::localTaskCallback, this, _1), false),
+    destNaviClient("navi", true)
 {
     nh = n;
     if (conf.mode == 1) {
@@ -163,6 +164,7 @@ int localTP::executePICK(std::vector<red_msgs::ManipulationObject> & objects) {
     red_msgs::ArmPoses manipPoses;
     std_srvs::Empty empty;
     int objectIndexOfMessage = 0;
+    int graspedObjects = 0;
 
     // Set initial position of manipulator for object recognition
     firstPose.theta = 3.1415;
@@ -285,6 +287,7 @@ int localTP::executePICK(std::vector<red_msgs::ManipulationObject> & objects) {
         }
         manipPoses.request.poses.clear();
 
+        // If conteiner isn't full, get position of free container and save its id
         secondPose = objectsContainer.getFreeContainerPoseAndSetID(objIdenifiers[actualObjectID]);
         firstPose = secondPose;
         firstPose.z += 0.1;
@@ -303,15 +306,17 @@ int localTP::executePICK(std::vector<red_msgs::ManipulationObject> & objects) {
 
         if (manipulationLineTrjClient.call(manipPoses)) {
             std::cout << "\t Successfull." << std::endl;
+            ++graspedObjects;
+            objects[objectIndexOfMessage].dest = 1;
         } else {
             ROS_ERROR("ManipulationLineTrjClient is not active.");
+            objects[objectIndexOfMessage].dest = 3;
             continue;
         }
         manipPoses.request.poses.clear();
         manipPoses.request.vel = 0;
         manipPoses.request.accel = 0;
         ros::service::call("release_arm", empty);
-        objects[objectIndexOfMessage].dest = 1;
 
         manipPoses.request.poses.push_back(startPose);
         if (manipulationPointClient.call(manipPoses)) {
@@ -320,7 +325,13 @@ int localTP::executePICK(std::vector<red_msgs::ManipulationObject> & objects) {
             ROS_ERROR("ManipulatorPointClient is not active.");
         }
         manipPoses.request.poses.clear();
+
+        // If some problems are comming
         ros::service::call("release_arm", empty);
+
+        // Check container is full
+        if (objectsContainer.isFull())
+            return 1;
     }
     objectsContainer.printIDS();
 
@@ -385,6 +396,11 @@ bool localTP::researchTableByCamera(std::vector<red_msgs::Pose> & recognizedPose
     return true;
 }
 
+int localTP::executePLACE(std::vector<red_msgs::ManipulationObject> & objects) {
+
+    return 1;
+}
+
 bool localTP::moveJoints(JointValues angle, std::vector<int> jointNum)
 {
     // Create message
@@ -394,9 +410,30 @@ bool localTP::moveJoints(JointValues angle, std::vector<int> jointNum)
     armPublisher.publish(jointPositions);
 }
 
-int localTP::executePLACE(std::vector<red_msgs::ManipulationObject> & objects) {
+int localTP::moveBase(geometry_msgs::Pose2D & Pose) {
 
-    return 1;
+    /// States:
+    /// 1 - all ok
+    /// 2 - cant move
+
+    if (destNaviClient.isServerConnected()){
+        red_msgs::DestGoal goal;
+        goal.task = "dest";
+        goal.dist = Pose;
+        destNaviClient.sendGoal(goal);
+        while (ros::ok()){
+            bool finished_before_timeout = destNaviClient.waitForResult(ros::Duration(20.0));
+            // If action service finished, return:
+            if (finished_before_timeout){
+                red_mgsg::DestResult result = destNaviClient.getResult();
+                if (result.has_got)
+                    return 1;
+                else
+                    return 2;
+            }
+        }
+    }
+    return 2;
 }
 
 void localTP::callCamera(red_msgs::CameraTask & task) {
