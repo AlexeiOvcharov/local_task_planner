@@ -86,6 +86,12 @@ localTP::localTP(ros::NodeHandle & n, Configuration conf) :
     armPublisher = nh.advertise<brics_actuator::JointPositions> ("arm_1/arm_controller/position_command", 1);
     localTaskServer.start();
 
+    std::vector<int> joint1 = {0};
+    JointValues q1_offset_joints;
+    q1_offset_joints(0) = q1_offset;
+    moveJoints(q1_offset_joints, joint1);
+    ros::Duration(2).sleep();
+
     // Setup start recognize pose
     startPose.x = 0.24; startPose.y = 0; startPose.z = 0.05;
     startPose.theta = 3.1415; startPose.psi = 0;
@@ -164,6 +170,7 @@ void localTP::localTaskCallback(const red_msgs::LTPTaskGoalConstPtr & goal)
     std::vector<red_msgs::ManipulationObject> objects;
     red_msgs::LTPTaskFeedback feedback;
     red_msgs::LTPTaskResult result;
+    std_srvs::Empty empty;
 
     objects = goal->objects;
     if (objects.empty())
@@ -172,8 +179,14 @@ void localTP::localTaskCallback(const red_msgs::LTPTaskGoalConstPtr & goal)
         executePICK(objects);
     } else if (goal->task == 2) {    /// PLACE
         executePLACE(objects);
-    }
 
+    }
+    ros::service::call("arm_manipulation/switchOffMotors", empty);
+    std::vector<int> joint1 = {0};
+    JointValues q1_offset_joints;
+    q1_offset_joints(0) = q1_offset;
+    moveJoints(q1_offset_joints, joint1);
+    ros::Duration(2).sleep();
     result.result = objects;
     localTaskServer.setSucceeded(result);
 }
