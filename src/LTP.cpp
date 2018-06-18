@@ -133,32 +133,6 @@ localTP::localTP(ros::NodeHandle & n, Configuration conf) :
 
     // Camera Research configuration
     cameraResearchAngleStep = 30*M_PI/180;
-
-    red_msgs::ArmPoses manipPoses;
-    ROS_INFO("[LTP] Go to first position.");
-    manipPoses.request.poses.push_back(startPose);
-    if (manipulationPointClient.call(manipPoses)) {
-        std::cout << "\t Successfull." << std::endl;
-    } else {
-        ROS_ERROR("ManipulatorPointClient is not active.");
-    }
-    ros::Duration(1).sleep();
-
-    // Activate tf for search transform
-    tf2_ros::Buffer tfBuffer(ros::Duration(10));
-    tf2_ros::TransformListener tfListener(tfBuffer);
-    geometry_msgs::TransformStamped transformStamped;
-    tf2::Quaternion cameraQuat;
-    try{
-        transformStamped = tfBuffer.lookupTransform("arm_link_0", "realsense_camera", ros::Time(0), ros::Duration(3.0));
-        // ROS_INFO_STREAM("Transform: " << transformStamped);
-        tf2::fromMsg(transformStamped.transform.rotation, cameraQuat);
-        tf2::fromMsg(transformStamped.transform.translation, cameraTranslation);
-        cameraRotMatrix = tf2::Matrix3x3(cameraQuat);
-    } catch (tf2::TransformException &ex) {
-        ROS_WARN("%s",ex.what());
-        ros::Duration(1.0).sleep();
-    }
 }
 
 localTP::~localTP()
@@ -209,6 +183,33 @@ int localTP::executePICK(std::vector<red_msgs::ManipulationObject> & objects) {
     std::vector<red_msgs::Pose> recognizedPoses;
     std::vector<long int> objIdenifiers;
 
+
+    ROS_INFO("[LTP] Go to first position.");
+    manipPoses.request.poses.push_back(startPose);
+    if (manipulationPointClient.call(manipPoses)) {
+        std::cout << "\t Successfull." << std::endl;
+    } else {
+        ROS_ERROR("ManipulatorPointClient is not active.");
+    }
+    ros::Duration(1).sleep();
+
+    // Activate tf for search transform
+    tf2_ros::Buffer tfBuffer(ros::Duration(10));
+    tf2_ros::TransformListener tfListener(tfBuffer);
+    geometry_msgs::TransformStamped transformStamped;
+    tf2::Quaternion cameraQuat;
+    try{
+        transformStamped = tfBuffer.lookupTransform("arm_link_0", "realsense_camera", ros::Time(0), ros::Duration(3.0));
+        // ROS_INFO_STREAM("Transform: " << transformStamped);
+        tf2::fromMsg(transformStamped.transform.rotation, cameraQuat);
+        tf2::fromMsg(transformStamped.transform.translation, cameraTranslation);
+        cameraRotMatrix = tf2::Matrix3x3(cameraQuat);
+    } catch (tf2::TransformException &ex) {
+        ROS_WARN("%s",ex.what());
+        ros::Duration(1.0).sleep();
+    }
+
+
     // Communicate with camera
     ROS_INFO("[LTP] Set request to camera with mode 1.");
     researchTableByCamera(recognizedPoses, objIdenifiers);
@@ -216,10 +217,6 @@ int localTP::executePICK(std::vector<red_msgs::ManipulationObject> & objects) {
         cameraError = 0;
     }
     ROS_INFO_STREAM("Finded OBJECTS num: " << recognizedPoses.size());
-
-    // Activate tf for search transform
-    tf2_ros::Buffer tfBuffer(ros::Duration(10));
-    tf2_ros::TransformListener tfListener(tfBuffer);
 
     JointValues optq; red_msgs::Pose objectTransform;
     double camTransx = cameraTranslation.m_floats[0];
