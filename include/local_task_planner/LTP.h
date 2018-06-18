@@ -186,6 +186,7 @@ class localTP
 
         // Base positions
         std::vector<geometry_msgs::Pose2D> positionsOfBase;
+        std::vector<red_msgs::Pose> placingTablePoses;
 };
 
 #endif

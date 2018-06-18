@@ -111,6 +111,20 @@ localTP::localTP(ros::NodeHandle & n, Configuration conf) :
     objectsContainer.poses[2].theta = -3.1415;
     objectsContainer.poses[2].psi = 0.25;
 
+    // Manipulator placing poses
+    red_msgs::Pose p;
+    double step;
+    // z is determine later
+    p.x = 0.35; p.y = -2*step;
+    p.theta = 3.1415;
+
+    for (p.y; p.y <= 2*step; p.y += step)
+        placingTablePoses.push_back(p);
+
+    for (int i = 0; i < placingTablePoses.size(); ++i) {
+        std::cout << placingTablePoses[i].x << ", " << placingTablePoses[i].y << ", " << placingTablePoses[i].z << std::endl;
+    }
+
     // Camera Research configuration
     cameraResearchAngleStep = 30*M_PI/180;
 
@@ -171,6 +185,7 @@ int localTP::executePICK(std::vector<red_msgs::ManipulationObject> & objects) {
     red_msgs::Pose firstPose, secondPose;
     red_msgs::ArmPoses manipPoses;
     std_srvs::Empty empty;
+    geometry_msgs::Pose2D Pose;
     int objectIndexOfMessage = 0;
     int graspedObjects = 0;
 
@@ -406,9 +421,10 @@ bool localTP::researchTableByCamera(std::vector<red_msgs::Pose> & recognizedPose
 int localTP::executePLACE(std::vector<red_msgs::ManipulationObject> & objects) {
 
     ROS_INFO("[LTP] Start PlACE execution");
-    
-    red_msgs::Pose firstPose, secondPose;
+
+    red_msgs::Pose firstPose, secondPose, tablePose;
     red_msgs::ArmPoses manipPoses;
+    red_msgs::CameraTask cameraTask;
     std_srvs::Empty empty;
     geometry_msgs::Pose2D Pose;
 
@@ -416,6 +432,21 @@ int localTP::executePLACE(std::vector<red_msgs::ManipulationObject> & objects) {
     int isMoveBaseSuccessful;
     int currentPosition = 2; // Initial position
     int indent = 0.05; // distannce between positions
+
+
+    manipPoses.request.poses.push_back(startPose);
+    if (manipulationPointClient.call(manipPoses)) {
+        std::cout << "\t Successfull." << std::endl;
+    } else {
+        ROS_ERROR("ManipulatorPointClient is not active.");
+    }
+    manipPoses.request.poses.clear();
+    ros::Duration(1).sleep();
+
+    // Determine table height
+    cameraTask.request.mode = 2;
+    callCamera(cameraTask);
+    tablePose = cameraTask.response.poses[0];
 
     for (int i; i < objects.size(); ++i) {
 
@@ -426,17 +457,17 @@ int localTP::executePLACE(std::vector<red_msgs::ManipulationObject> & objects) {
         // 0    1    2    3    4
         //
         // we start at position number 2
-        Pose.y = (objects[i].dest - currentPosition) * indent;
+        // Pose.y = (objects[i].dest - currentPosition) * indent;
 
-        isMoveBaseSuccessful = moveBase(Pose);
+        // isMoveBaseSuccessful = moveBase(Pose);
 
-        if (isMoveBaseSuccessful == 1) {
-            currentPosition = objects[i].dest;
-            ROS_INFO_STREAM("[LTP] Successful base moving to position number " << currentPosition);
-        } else {
-            ROS_INFO("[LTP] Problems with moving base");
-            // TODO Add unsuccessful case
-        }
+        // if (isMoveBaseSuccessful == 1) {
+        //     currentPosition = objects[i].dest;
+        //     ROS_INFO_STREAM("[LTP] Successful base moving to position number " << currentPosition);
+        // } else {
+        //     ROS_INFO("[LTP] Problems with moving base");
+        //     // TODO Add unsuccessful case
+        // }
 
         // Poses to picking from container
         containerNumber = objectsContainer.getContainerByID(objects[i].obj);
@@ -444,9 +475,6 @@ int localTP::executePLACE(std::vector<red_msgs::ManipulationObject> & objects) {
         secondPose = objectsContainer.poses[containerNumber];
         firstPose = secondPose;
         firstPose.z += 0.1;
-
-        manipPoses.request.vel = 1;
-        manipPoses.request.accel = 0.5;
 
         ROS_WARN_STREAM("[LTP] PICK FROM CONTAINER THE Object!!!!");
         manipPoses.request.poses.push_back(firstPose);
@@ -466,12 +494,12 @@ int localTP::executePLACE(std::vector<red_msgs::ManipulationObject> & objects) {
         ros::service::call("grasp", empty);
 
         // Poses to placing to table
-        // TODO angles and table height 
-        secondPose.x = 0.35;
-        secondPose.y = 0;
+        // TODO angles and table height
         // secondPose.z = ;
         // secondPose.theta = 3.1415;
         // secondPose.psi = ;
+        secondPose = placingTablePoses[i];
+        secondPose.z = tablePose.z;
         firstPose = secondPose;
         firstPose.z += 0.1;
 
