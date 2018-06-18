@@ -66,31 +66,30 @@ localTP::localTP(ros::NodeHandle & n, Configuration conf) :
         ROS_INFO("Start RoboCup localTP");
 
         compVisionClient = nh.serviceClient<red_msgs::CameraTask>(conf.cvServiceName);
-        if (!ros::service::waitForService(conf.cvServiceName, ros::Duration(3.0))) {
+        while (!ros::service::waitForService(conf.cvServiceName, ros::Duration(3.0))) {
             ROS_ERROR("Server %s is not active!", conf.cvServiceName.c_str());
-            ros::shutdown();
         }
 
         manipulationPointClient = nh.serviceClient<red_msgs::ArmPoses>(conf.manipServiceName[0]);
-        if (!ros::service::waitForService(conf.cvServiceName, ros::Duration(3.0))) {
+        while (!ros::service::waitForService(conf.cvServiceName, ros::Duration(3.0))) {
             ROS_ERROR("Server %s is not active!", conf.manipServiceName[0].c_str());
-            ros::shutdown();
         }
 
         manipulationLineTrjClient = nh.serviceClient<red_msgs::ArmPoses>(conf.manipServiceName[1]);
-        if (!ros::service::waitForService(conf.cvServiceName, ros::Duration(3.0))) {
+        while (!ros::service::waitForService(conf.cvServiceName, ros::Duration(3.0))) {
             ROS_ERROR("Server %s is not active!", conf.manipServiceName[1].c_str());
-            ros::shutdown();
+        }
+
+        gripperClient = nh.serviceClient<std_srvs::Empty>("/grasp");
+        while (!ros::service::waitForService("/grasp", ros::Duration(3.0))) {
+            ROS_ERROR("Server %s is not active!", "/grap");
         }
     }
     armPublisher = nh.advertise<brics_actuator::JointPositions> ("arm_1/arm_controller/position_command", 1);
     localTaskServer.start();
 
-    std::vector<int> joint1 = {0};
-    JointValues q1_offset_joints;
-    q1_offset_joints(0) = q1_offset;
-    moveJoints(q1_offset_joints, joint1);
-    ros::Duration(2).sleep();
+    // Go to initial and relax
+    goToInitialAndRelax();
 
     // Setup start recognize pose
     startPose.x = 0.24; startPose.y = 0; startPose.z = 0.05;
@@ -119,7 +118,7 @@ localTP::localTP(ros::NodeHandle & n, Configuration conf) :
 
     // Manipulator placing poses
     red_msgs::Pose p;
-    double step;
+    double step = 0.07;
     // z is determine later
     p.x = 0.35; p.y = -2*step;
     p.theta = 3.1415;
@@ -133,6 +132,27 @@ localTP::localTP(ros::NodeHandle & n, Configuration conf) :
 
     // Camera Research configuration
     cameraResearchAngleStep = 30*M_PI/180;
+
+    /// Camera Research angles
+    /// 2      1      3
+    ///  \     |     /
+    ///   \    |    /
+    ///   manipulator
+    JointValues jv;
+    jv(0) = initialResearchAngle;
+    camJV.push_back(jv);
+    jv(0) -= cameraResearchAngleStep;
+    camJV.push_back(jv);
+    jv(0) += 2*cameraResearchAngleStep;
+    camJV.push_back(jv);
+
+    // Check gripper
+    std_srvs::Empty empty;
+    ros::service::call("grasp", empty);
+    ros::Duration(1).sleep();
+
+    ros::service::call("release_arm", empty);
+    ros::Duration(1).sleep();
 }
 
 localTP::~localTP()
@@ -144,23 +164,20 @@ void localTP::localTaskCallback(const red_msgs::LTPTaskGoalConstPtr & goal)
     std::vector<red_msgs::ManipulationObject> objects;
     red_msgs::LTPTaskFeedback feedback;
     red_msgs::LTPTaskResult result;
-    std_srvs::Empty empty;
 
     objects = goal->objects;
-    if (objects.empty())
+    if (objects.empty()) {
+        localTaskServer.setAborted();
         return;
+    }
     if (goal->task == 1) {           /// PICK
         executePICK(objects);
     } else if (goal->task == 2) {    /// PLACE
         executePLACE(objects);
 
     }
-    ros::service::call("arm_manipulation/switchOffMotors", empty);
-    std::vector<int> joint1 = {0};
-    JointValues q1_offset_joints;
-    q1_offset_joints(0) = q1_offset;
-    moveJoints(q1_offset_joints, joint1);
-    ros::Duration(2).sleep();
+    // Go to initial and relax
+    goToInitialAndRelax();
     result.result = objects;
     localTaskServer.setSucceeded(result);
 }
@@ -192,6 +209,7 @@ int localTP::executePICK(std::vector<red_msgs::ManipulationObject> & objects) {
         ROS_ERROR("ManipulatorPointClient is not active.");
     }
     ros::Duration(1).sleep();
+    manipPoses.request.poses.clear();
 
     // Activate tf for search transform
     tf2_ros::Buffer tfBuffer(ros::Duration(10));
@@ -288,7 +306,7 @@ int localTP::executePICK(std::vector<red_msgs::ManipulationObject> & objects) {
         firstPose.y = cameraTask.response.poses[0].y;
         firstPose.z = cameraTask.response.poses[0].z + 0.1;
         firstPose.theta = 3.1415;
-        firstPose.psi = -cameraTask.response.poses[0].psi;
+        firstPose.psi = cameraTask.response.poses[0].psi;
 
         secondPose = firstPose;
         secondPose.z -= 0.09;
@@ -440,8 +458,8 @@ int localTP::executePLACE(std::vector<red_msgs::ManipulationObject> & objects) {
 
     int containerNumber;
     int isMoveBaseSuccessful;
-    int currentPosition = 2; // Initial position
-    int indent = 0.05; // distannce between positions
+    int currentPosition = 2;    // Initial position
+    int indent = 0.05;          // distannce between positions
 
 
     manipPoses.request.poses.push_back(startPose);
@@ -454,7 +472,7 @@ int localTP::executePLACE(std::vector<red_msgs::ManipulationObject> & objects) {
     ros::Duration(1).sleep();
 
     // Determine table height
-    cameraTask.request.mode = 2;
+    cameraTask.request.mode = 1;
     callCamera(cameraTask);
     tablePose = cameraTask.response.poses[0];
 
@@ -481,8 +499,13 @@ int localTP::executePLACE(std::vector<red_msgs::ManipulationObject> & objects) {
 
         // Poses to picking from container
         containerNumber = objectsContainer.getContainerByID(objects[i].obj);
+        double angOfTable = 0;
+        double h = 0;           // Extension of length
 
         secondPose = objectsContainer.poses[containerNumber];
+        angOfTable = atan2(objectsContainer.poses[containerNumber].y, objectsContainer.poses[containerNumber].x);
+        secondPose.x += h*cos(angOfTable);
+        secondPose.y += h*sin(angOfTable);
         firstPose = secondPose;
         firstPose.z += 0.1;
 
@@ -508,6 +531,7 @@ int localTP::executePLACE(std::vector<red_msgs::ManipulationObject> & objects) {
         // secondPose.z = ;
         // secondPose.theta = 3.1415;
         // secondPose.psi = ;
+
         secondPose = placingTablePoses[i];
         secondPose.z = tablePose.z;
         firstPose = secondPose;
@@ -616,4 +640,21 @@ void localTP::callCamera(red_msgs::CameraTask & task) {
         }
     }
 
+}
+
+void localTP::goToInitialAndRelax()
+{
+    std_srvs::Empty empty;
+    brics_actuator::JointPositions jointPositions;
+    std::vector<int> jnum = {1, 2, 3};
+    JointValues jv;
+
+    jv(1) = 0.11; jv(2) = -0.11; jv(3) = 0.11;
+    jointPositions = createArmPositionMsg(jv, jnum);
+
+    // Move to desired angle
+    armPublisher.publish(jointPositions);
+    ros::Duration(2).sleep();
+
+    ros::service::call("arm_1/switchOffMotors", empty);
 }

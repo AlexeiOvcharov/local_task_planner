@@ -133,6 +133,9 @@ class localTP
         // Function for moving base to desired vector by action client
         int moveBase(geometry_msgs::Pose2D & Pose);
 
+        // Go to initial position for 2...4 joints and switch off motors
+        void goToInitialAndRelax();
+
         // Camera loock to table from 3 selected arm positions.
         // Function return all recognize object positions and their identificators
         bool researchTableByCamera(std::vector<red_msgs::Pose> & regonizedPoses, std::vector<long int> & objIdenifiers);
@@ -168,6 +171,9 @@ class localTP
         // Move to line
         ros::ServiceClient manipulationLineTrjClient;
 
+        // Gripper service
+        ros::ServiceClient gripperClient;
+
         // Publishers
         ros::Publisher armPublisher;
 
@@ -187,6 +193,9 @@ class localTP
         // Base positions
         std::vector<geometry_msgs::Pose2D> positionsOfBase;
         std::vector<red_msgs::Pose> placingTablePoses;
+
+        // Camera recognized joint values
+        std::vector<JointValues> camJV;
 };
 
 #endif
