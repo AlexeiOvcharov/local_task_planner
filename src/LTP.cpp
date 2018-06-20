@@ -462,8 +462,8 @@ int localTP::executePLACE(std::vector<red_msgs::ManipulationObject> & objects)
 
     ROS_INFO("[LTP] Start PlACE execution");
 
-    red_msgs::Pose firstPose, secondPose, padPose;
-    red_msgs::ArmPoses manipPoses;
+    red_msgs::Pose firstPose, secondPose;
+    red_msgs::ArmPoses manipPoses, placePoses;
     std::vector<red_msgs::Pose> tablePoses;
     std::vector<long int> objIdenifiers;
     red_msgs::CameraTask cameraTask;
@@ -493,23 +493,25 @@ int localTP::executePLACE(std::vector<red_msgs::ManipulationObject> & objects)
 
     ROS_INFO_STREAM(objects[0].obj);
     // Recognize no precisely pad positionss
-    if (objects[0].dest != 6) {
+    if (objects[0].dest <= 5 && objects[0].dest >= 1) {
         // Determine table height
         cameraTask.request.mode = 1;
         callCamera(cameraTask);
         tablePoses = cameraTask.response.poses;
-    } else {
+    } else if (objects[0].dest == 6) {
         // Communicate with camera
         ROS_INFO("[LTP] Set request to camera with mode 1.");
         researchTableByCamera(tablePoses, objIdenifiers);
 
         ROS_INFO_STREAM("Finded OBJECTS num: " << tablePoses.size());
+    } else if (objects[0].dest == 7) {
+        //
     }
 
     for (int i = 0; i < objects.size(); ++i) {
 
 
-        if (!getPadPlace(padPose, objects[i], tablePoses, objIdenifiers)) {
+        if (!getPadPlace(placePoses, objects[i], tablePoses, objIdenifiers)) {
             ROS_WARN("PAD is not equal");
             continue;
         }
@@ -562,25 +564,25 @@ int localTP::executePLACE(std::vector<red_msgs::ManipulationObject> & objects)
         manipPoses.request.poses.clear();
         ros::service::call("grasp", empty);
 
-        // secondPose = padPose;
-        secondPose = placingTablePoses[objects[0].dest - 1];
-        secondPose.z = tablePoses[0].z;
-        secondPose.theta = 3.1415;
-        firstPose = secondPose;
-        firstPose.z += 0.1;
+        // // secondPose = padPose;
+        // secondPose = placingTablePoses[objects[0].dest - 1];
+        // secondPose.z = tablePoses[0].z;
+        // secondPose.theta = 3.1415;
+        // firstPose = secondPose;
+        // firstPose.z += 0.1;
 
-        manipPoses.request.vel = 1;
-        manipPoses.request.accel = 0.5;
+        // manipPoses.request.vel = 1;
+        // manipPoses.request.accel = 0.5;
 
         ROS_WARN_STREAM("[LTP] PLACE TO DESTINATION THE Object!!!!");
-        manipPoses.request.poses.push_back(firstPose);
-        manipPoses.request.poses.push_back(secondPose);
+        // manipPoses.request.poses.push_back(firstPose);
+        // manipPoses.request.poses.push_back(secondPose);
         std::cout << "INFO: ++++++++++++++++++++++++++\n"
-            << manipPoses.request.poses[0] << std::endl;
+            << placePoses.request.poses[0] << std::endl;
                 std::cout << "INFO: ++++++++++++++++++++++++++\n"
-            << manipPoses.request.poses[1] << std::endl;
+            << placePoses.request.poses[1] << std::endl;
 
-        if (manipulationLineTrjClient.call(manipPoses)) {
+        if (manipulationLineTrjClient.call(placePoses)) {
             std::cout << "\t Successfull." << std::endl;
         } else {
             ROS_ERROR("ManipulationLineTrjClient is not active.");
@@ -599,11 +601,22 @@ int localTP::executePLACE(std::vector<red_msgs::ManipulationObject> & objects)
     return 1;
 }
 
-bool localTP::getPadPlace(red_msgs::Pose & p, red_msgs::ManipulationObject & object, std::vector<red_msgs::Pose> & tablePoses, std::vector<long int> & objIdenifiers)
+bool localTP::getPadPlace(red_msgs::ArmPoses & p, red_msgs::ManipulationObject & object, std::vector<red_msgs::Pose> & tablePoses, std::vector<long int> & objIdenifiers)
 {
+    red_msgs::Pose firstPose, secondPose;
+
     if (object.dest <= 5 && object.dest >= 1) {
-        p = placingTablePoses[object.dest - 1];
-        p.z = tablePoses[0].z;
+        secondPose = placingTablePoses[object.dest - 1];
+        secondPose.z = tablePoses[0].z;
+        secondPose.theta = 3.1415;
+        firstPose = secondPose;
+        firstPose.z += 0.1;
+
+        p.request.vel = 1;
+        p.request.accel = 0.5;
+
+        p.request.poses.push_back(firstPose);
+        p.request.poses.push_back(secondPose);
     }
 
     if (object.dest == 6) {
@@ -658,7 +671,7 @@ bool localTP::getPadPlace(red_msgs::Pose & p, red_msgs::ManipulationObject & obj
         if (!valid) {
         ROS_ERROR("Obj NOT valid!");
             return false;
-    }
+        }
 
         // Find manipulator configuration for optical axis of camera
         objectTransform = tablePoses[actualIndex];
@@ -682,12 +695,24 @@ bool localTP::getPadPlace(red_msgs::Pose & p, red_msgs::ManipulationObject & obj
         cameraTask.request.request_id = objIdenifiers[actualIndex];
         callCamera(cameraTask);
 
-        p = tablePoses[actualIndex];
-        p.z += 0.02;
+        secondPose = tablePoses[actualIndex];
+        secondPose.z += 0.02;
+        secondPose.theta = 3.1415;
+        firstPose = secondPose;
+        firstPose.z += 0.1;
+
+        p.request.vel = 1;
+        p.request.accel = 0.5;
+
+        p.request.poses.push_back(firstPose);
+        p.request.poses.push_back(secondPose);
+
         if (cameraTask.response.ids[0] != objIdenifiers[actualIndex])
             return false;
 
     }
+
+    if (object.dest == 7){}
 
     return true;
 }

@@ -152,7 +152,7 @@ class localTP
         // Move first joint of manipulator
         bool moveJoints(JointValues angle, std::vector<int> jointNum);
 
-        bool getPadPlace(red_msgs::Pose & p, red_msgs::ManipulationObject & object, std::vector<red_msgs::Pose> & tablePoses, std::vector<long int> & objIdenifiers);
+        bool getPadPlace(red_msgs::ArmPoses & p, red_msgs::ManipulationObject & object, std::vector<red_msgs::Pose> & tablePoses, std::vector<long int> & objIdenifiers);
 
         ros::NodeHandle nh;
 
