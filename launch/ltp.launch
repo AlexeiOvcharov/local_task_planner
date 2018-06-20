@@ -1,0 +1,22 @@
+<launch>
+    <node
+        pkg = "arm_manipulation"
+        type = "start_manipulation"
+        name = "manipulation_node">
+
+    </node>
+    <node
+        pkg = "rosserial_python"
+        type = "serial_node.py"
+        name = "serial_node.py"
+        args = "/dev/serial/by-id/usb-Arduino__www.arduino.cc__0042_85336303532351605190-if00 _baud:=57600">
+
+    </node>
+    <node
+        pkg = "local_task_planner"
+        type = "FirstTest"
+        name = "local_tp"
+        output = "screen">
+
+    </node>
+</launch>

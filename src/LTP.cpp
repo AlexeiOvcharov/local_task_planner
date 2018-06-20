@@ -35,7 +35,6 @@ int findObjectIndexByID(const std::vector<red_msgs::ManipulationObject> & object
 // TODO move to utils
 brics_actuator::JointPositions createArmPositionMsg(const JointValues & jointAngles, std::vector<int> number)
 {
-    //ROS_INFO("createArmPositionMsg...");
     brics_actuator::JointPositions jointPositions;
     brics_actuator::JointValue jointValue;
     for (size_t i = 0; i < number.size(); ++i) {
@@ -86,6 +85,7 @@ localTP::localTP(ros::NodeHandle & n, Configuration conf) :
         }
     }
     armPublisher = nh.advertise<brics_actuator::JointPositions> ("arm_1/arm_controller/position_command", 1);
+    ros::Duration(2).sleep();
     localTaskServer.start();
 
     // Go to initial and relax
@@ -183,6 +183,13 @@ void localTP::localTaskCallback(const red_msgs::LTPTaskGoalConstPtr & goal)
 }
 
 int localTP::executePICK(std::vector<red_msgs::ManipulationObject> & objects) {
+
+    // Check container is full
+    if (objectsContainer.isFull()) {
+        ROS_INFO("Containers is full!!");
+        objectsContainer.printIDS();
+        return 1;
+    }
 
     ROS_INFO("[LTP] Start PICK execution");
 
@@ -306,10 +313,10 @@ int localTP::executePICK(std::vector<red_msgs::ManipulationObject> & objects) {
         firstPose.y = cameraTask.response.poses[0].y;
         firstPose.z = cameraTask.response.poses[0].z + 0.1;
         firstPose.theta = 3.1415;
-        firstPose.psi = cameraTask.response.poses[0].psi;
+        firstPose.psi = -cameraTask.response.poses[0].psi;
 
         secondPose = firstPose;
-        secondPose.z -= 0.09;
+        secondPose.z -= 0.095;
 
         // Pick object from table
         ROS_WARN_STREAM("[LTP] PICK THE Objects!!!!");
@@ -380,8 +387,11 @@ int localTP::executePICK(std::vector<red_msgs::ManipulationObject> & objects) {
         ros::service::call("release_arm", empty);
 
         // Check container is full
-        if (objectsContainer.isFull())
+        if (objectsContainer.isFull()) {
+            ROS_INFO("Containers is full!!");
+            objectsContainer.printIDS();
             return 1;
+        }
     }
     objectsContainer.printIDS();
 
@@ -400,10 +410,10 @@ bool localTP::researchTableByCamera(std::vector<red_msgs::Pose> & recognizedPose
     red_msgs::CameraTask cameraTask;
     cameraTask.request.mode = 1;
 
-    currAng(0) = initialResearchAngle - cameraResearchAngleStep;
-    for (int i = 0; i < posesNum; ++i) {
+    // currAng(0) = initialResearchAngle - cameraResearchAngleStep;
+    for (int i = 0; i < camJV.size(); ++i) {
         // Move joint 1 to angle
-        moveJoints(currAng, joint1);
+        moveJoints(camJV[i], joint1);
         ros::Duration(2).sleep();
 
         // Send task to camera with mode 1
@@ -434,7 +444,7 @@ bool localTP::researchTableByCamera(std::vector<red_msgs::Pose> & recognizedPose
         }
 
 
-        currAng(0) += cameraResearchAngleStep;
+        // currAng(0) += cameraResearchAngleStep;
     }
     if (recognizedPoses.size() == initialSize)
         return false;
@@ -450,8 +460,10 @@ int localTP::executePLACE(std::vector<red_msgs::ManipulationObject> & objects) {
 
     ROS_INFO("[LTP] Start PlACE execution");
 
-    red_msgs::Pose firstPose, secondPose, tablePose;
+    red_msgs::Pose firstPose, secondPose, padPose;
     red_msgs::ArmPoses manipPoses;
+    std::vector<red_msgs::Pose> tablePoses;
+    std::vector<long int> objIdenifiers;
     red_msgs::CameraTask cameraTask;
     std_srvs::Empty empty;
     geometry_msgs::Pose2D Pose;
@@ -461,6 +473,12 @@ int localTP::executePLACE(std::vector<red_msgs::ManipulationObject> & objects) {
     int currentPosition = 2;    // Initial position
     int indent = 0.05;          // distannce between positions
 
+    objectsContainer.printIDS();
+    if (objectsContainer.empty()) {
+        ROS_INFO("Container is empty!");
+        objectsContainer.printIDS();
+        return 1;
+    }
 
     manipPoses.request.poses.push_back(startPose);
     if (manipulationPointClient.call(manipPoses)) {
@@ -471,18 +489,33 @@ int localTP::executePLACE(std::vector<red_msgs::ManipulationObject> & objects) {
     manipPoses.request.poses.clear();
     ros::Duration(1).sleep();
 
-    // Determine table height
-    cameraTask.request.mode = 1;
-    callCamera(cameraTask);
-    tablePose = cameraTask.response.poses[0];
+    ROS_INFO_STREAM(objects[0].obj);
+    // Recognize no precisely pad positionss
+    // if (objects[0].dest != 6) {
+        // Determine table height
+        cameraTask.request.mode = 1;
+        callCamera(cameraTask);
+        tablePoses = cameraTask.response.poses;
+    // } else {
+    //     // Communicate with camera
+    //     ROS_INFO("[LTP] Set request to camera with mode 1.");
+    //     researchTableByCamera(tablePoses, objIdenifiers);
 
-    for (int i; i < objects.size(); ++i) {
+    //     ROS_INFO_STREAM("Finded OBJECTS num: " << tablePoses.size());
+    // }
 
-        // First moving to object destination
+    for (int i = 0; i < objects.size(); ++i) {
+
+
+        // if (!getPadPlace(padPose, objects[i], tablePoses, objIdenifiers)) {
+        //     ROS_WARN("PAD is not equal");
+        //     continue;
+        // }
+
 
         // We have 5 positions for object placement
         // |    |    |    |    |
-        // 0    1    2    3    4
+        // 1    2    3    4    5
         //
         // we start at position number 2
         // Pose.y = (objects[i].dest - currentPosition) * indent;
@@ -497,10 +530,12 @@ int localTP::executePLACE(std::vector<red_msgs::ManipulationObject> & objects) {
         //     // TODO Add unsuccessful case
         // }
 
+        ROS_INFO_STREAM("container number" << objects[i].obj);
         // Poses to picking from container
         containerNumber = objectsContainer.getContainerByID(objects[i].obj);
+        // ROS_INFO_STREAM("Container number" << containerNumber);
         double angOfTable = 0;
-        double h = 0;           // Extension of length
+        double h = 0.01;           // Extension of length
 
         secondPose = objectsContainer.poses[containerNumber];
         angOfTable = atan2(objectsContainer.poses[containerNumber].y, objectsContainer.poses[containerNumber].x);
@@ -526,14 +561,10 @@ int localTP::executePLACE(std::vector<red_msgs::ManipulationObject> & objects) {
         manipPoses.request.poses.clear();
         ros::service::call("grasp", empty);
 
-        // Poses to placing to table
-        // TODO angles and table height
-        // secondPose.z = ;
-        // secondPose.theta = 3.1415;
-        // secondPose.psi = ;
-
-        secondPose = placingTablePoses[i];
-        secondPose.z = tablePose.z;
+        // secondPose = padPose;
+        secondPose = placingTablePoses[objects[0].dest - 1];
+        secondPose.z = tablePoses[0].z;
+        secondPose.theta = 3.1415;
         firstPose = secondPose;
         firstPose.z += 0.1;
 
@@ -561,10 +592,103 @@ int localTP::executePLACE(std::vector<red_msgs::ManipulationObject> & objects) {
         ros::service::call("release_arm", empty);
 
         // clean container
-        objectsContainer.clearContainer(containerNumber);
+        objectsContainer.clearContainer(objects[i].obj);
     }
 
     return 1;
+}
+
+bool localTP::getPadPlace(red_msgs::Pose & p, red_msgs::ManipulationObject & object, std::vector<red_msgs::Pose> & tablePoses, std::vector<long int> & objIdenifiers)
+{
+    if (object.dest < 5 && object.dest > 1) {
+        p = placingTablePoses[object.dest - 1];
+        p.z = tablePoses[0].z;
+    }
+
+    if (object.dest == 6) {
+        red_msgs::ArmPoses manipPoses;
+
+        // Go to initial recognize position
+        manipPoses.request.poses.push_back(startPose);
+        if (manipulationPointClient.call(manipPoses)) {
+            // std::cout << "\t Successfull." << std::endl;
+        } else {
+            ROS_ERROR("ManipulatorPointClient is not active.");
+        }
+        ros::Duration(0.5).sleep();
+        manipPoses.request.poses.clear();
+
+        // Activate tf for search transform
+        tf2_ros::Buffer tfBuffer(ros::Duration(10));
+        tf2_ros::TransformListener tfListener(tfBuffer);
+        geometry_msgs::TransformStamped transformStamped;
+        tf2::Quaternion cameraQuat;
+        try{
+            transformStamped = tfBuffer.lookupTransform("arm_link_0", "realsense_camera", ros::Time(0), ros::Duration(3.0));
+            // ROS_INFO_STREAM("Transform: " << transformStamped);
+            tf2::fromMsg(transformStamped.transform.rotation, cameraQuat);
+            tf2::fromMsg(transformStamped.transform.translation, cameraTranslation);
+            cameraRotMatrix = tf2::Matrix3x3(cameraQuat);
+        } catch (tf2::TransformException &ex) {
+            ROS_WARN("%s",ex.what());
+            ros::Duration(1.0).sleep();
+        }
+
+        JointValues optq; red_msgs::Pose objectTransform;
+        double camTransx = cameraTranslation.m_floats[0];
+        double camTransy = cameraTranslation.m_floats[1];
+        double zx = cameraRotMatrix[0][2]; double zy = cameraRotMatrix[1][2];
+        double a1 = zx*camTransx + zy*camTransy, a2 = 0, h = 0, xtrans = 0, ytrans = 0;
+        int actualObjectID = 0;
+        bool valid = false;
+        int actualIndex;
+
+        red_msgs::CameraTask cameraTask;
+
+        // Check id of actual id
+        for (int j = 0; j < objIdenifiers.size(); ++j) {
+            ROS_INFO_STREAM("IDNT " << objIdenifiers[j] << " | " << object.obj);
+            valid = valid || (objIdenifiers[j] == object.obj);
+            if (valid) {
+                actualIndex = j;
+                break;
+            }
+        }
+        if (!valid) {
+        ROS_ERROR("Obj NOT valid!");
+            return false;
+    }
+
+        // Find manipulator configuration for optical axis of camera
+        objectTransform = tablePoses[actualIndex];
+
+        // Find desired leinght of z axis
+        a2 = camTransx*camTransx + camTransy*camTransy - (objectTransform.x*objectTransform.x + objectTransform.y*objectTransform.y);
+        h = (-a1 + sqrt(a1*a1 - 4*a2))/2;                                  // Coefficients
+
+        ytrans = camTransy + h*zy;
+        xtrans = camTransx + h*zx;
+        optq(0) = atan2(objectTransform.y, objectTransform.x)               // Desired vector
+            - atan2(ytrans, xtrans);                                        // Object translation
+        makeYoubotArmOffsets(optq);
+
+        ROS_INFO("Angle q1: %f", optq(0));
+        std::vector<int> jnum = {0};
+        moveJoints(optq, jnum);
+
+        ROS_INFO_STREAM("[LTP] Set request to camera with mode 2.\t | id( " << objIdenifiers[actualIndex] <<  ")");
+        cameraTask.request.mode = 2;
+        cameraTask.request.request_id = objIdenifiers[actualIndex];
+        callCamera(cameraTask);
+
+        p = tablePoses[actualIndex];
+        p.z += 0.02;
+        if (cameraTask.response.ids[0] != objIdenifiers[actualIndex])
+            return false;
+
+    }
+
+    return true;
 }
 
 bool localTP::moveJoints(JointValues angle, std::vector<int> jointNum)

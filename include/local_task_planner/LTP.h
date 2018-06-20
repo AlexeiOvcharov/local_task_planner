@@ -84,7 +84,16 @@ struct Container
             if (isEmpty(i))
                 return false;
         }
+        return true;
+    }
 
+    bool empty()
+    {
+        for (int i = 0; i < size; ++i) {
+            if (!isEmpty(i))
+                return false;
+        }
+        return true;
     }
 
     size_t size;
@@ -142,6 +151,8 @@ class localTP
 
         // Move first joint of manipulator
         bool moveJoints(JointValues angle, std::vector<int> jointNum);
+
+        bool getPadPlace(red_msgs::Pose & p, red_msgs::ManipulationObject & object, std::vector<red_msgs::Pose> & tablePoses, std::vector<long int> & objIdenifiers);
 
         ros::NodeHandle nh;
 
