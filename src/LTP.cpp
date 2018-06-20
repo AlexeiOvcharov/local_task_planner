@@ -345,20 +345,16 @@ int localTP::executePICK(std::vector<red_msgs::ManipulationObject> & objects)
             }
             manipPoses.request.poses.clear();
 
-            // If conteiner isn't full, get position of free container and save its id
-            secondPose = objectsContainer.getFreeContainerPoseAndSetID(objIdenifiers[actualObjectID]);
-            firstPose = secondPose;
-            firstPose.z += 0.1;
         } else if (objects[objectIndexOfMessage].dest == 1) {
 
-            firstPose.x = cameraTask.response.poses[0].x;
-            firstPose.y = cameraTask.response.poses[0].y;
-            firstPose.z = cameraTask.response.poses[0].z;
-            firstPose.theta = 3.1415;
-            firstPose.psi = -cameraTask.response.poses[0].psi;
-
-            secondPose = startPose;
+            secondPose.x = cameraTask.response.poses[0].x;
+            secondPose.y = cameraTask.response.poses[0].y;
+            secondPose.z = cameraTask.response.poses[0].z;
+            secondPose.theta = 3.1415;
             secondPose.psi = -cameraTask.response.poses[0].psi;
+
+            firstPose = startPose;
+            firstPose.psi = -cameraTask.response.poses[0].psi;
 
             ROS_WARN_STREAM("[LTP] PICK THE Objects!!!!");
             manipPoses.request.poses.push_back(firstPose);
@@ -374,10 +370,11 @@ int localTP::executePICK(std::vector<red_msgs::ManipulationObject> & objects)
                 ROS_ERROR("ManipulationLineTrjClient is not active.");
                 continue;
             }
+            manipPoses.request.poses.clear();
 
             // TODO corrrect x shift and z
             firstPose = secondPose;
-            firstPose.x -= 0.07;
+            firstPose.x -= 0.1;
             firstPose.z += 0.07;
 
             manipPoses.request.poses.push_back(secondPose);
@@ -393,7 +390,13 @@ int localTP::executePICK(std::vector<red_msgs::ManipulationObject> & objects)
                 ROS_ERROR("ManipulationLineTrjClient is not active.");
                 continue;
             }
+            manipPoses.request.poses.clear();
         }
+
+        // If conteiner isn't full, get position of free container and save its id
+        secondPose = objectsContainer.getFreeContainerPoseAndSetID(objIdenifiers[actualObjectID]);
+        firstPose = secondPose;
+        firstPose.z += 0.1;
 
         // TODO move to initial position by the segmental
 
@@ -456,6 +459,7 @@ bool localTP::researchTableByCamera(std::vector<red_msgs::Pose> & recognizedPose
     red_msgs::CameraTask cameraTask;
     cameraTask.request.mode = 1;
 
+    ros::service::call("open_large", empty);
     // currAng(0) = initialResearchAngle - cameraResearchAngleStep;
     for (int i = 0; i < camJV.size(); ++i) {
         // Move joint 1 to angle
@@ -536,7 +540,6 @@ int localTP::executePLACE(std::vector<red_msgs::ManipulationObject> & objects)
     manipPoses.request.poses.clear();
     ros::Duration(1).sleep();
 
-    ROS_INFO_STREAM(objects[0].obj);
     // Recognize no precisely pad positionss
     if (objects[0].dest <= 5 && objects[0].dest >= 1) {
         // Determine table height
@@ -549,8 +552,6 @@ int localTP::executePLACE(std::vector<red_msgs::ManipulationObject> & objects)
         researchTableByCamera(tablePoses, objIdenifiers);
 
         ROS_INFO_STREAM("Finded OBJECTS num: " << tablePoses.size());
-    } else if (objects[0].dest == 7) {
-        //
     }
 
     for (int i = 0; i < objects.size(); ++i) {
@@ -654,11 +655,10 @@ bool localTP::getPadPlace(red_msgs::ArmPoses & p, red_msgs::ManipulationObject &
         secondPose = placingTablePoses[object.dest - 1];
         secondPose.z = tablePoses[0].z;
         secondPose.theta = 3.1415;
-        firstPose = secondPose;
-        firstPose.z += 0.1;
+        firstPose = startPose;
 
-        p.request.vel = 1;
-        p.request.accel = 0.5;
+        p.request.vel = 0;
+        p.request.accel = 0;
 
         p.request.poses.push_back(firstPose);
         p.request.poses.push_back(secondPose);
@@ -756,8 +756,6 @@ bool localTP::getPadPlace(red_msgs::ArmPoses & p, red_msgs::ManipulationObject &
             return false;
 
     }
-
-    if (object.dest == 7){}
 
     return true;
 }
