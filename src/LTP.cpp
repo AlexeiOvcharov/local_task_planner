@@ -182,7 +182,8 @@ void localTP::localTaskCallback(const red_msgs::LTPTaskGoalConstPtr & goal)
     localTaskServer.setSucceeded(result);
 }
 
-int localTP::executePICK(std::vector<red_msgs::ManipulationObject> & objects) {
+int localTP::executePICK(std::vector<red_msgs::ManipulationObject> & objects)
+{
 
     // Check container is full
     if (objectsContainer.isFull()) {
@@ -456,7 +457,8 @@ bool localTP::researchTableByCamera(std::vector<red_msgs::Pose> & recognizedPose
     return true;
 }
 
-int localTP::executePLACE(std::vector<red_msgs::ManipulationObject> & objects) {
+int localTP::executePLACE(std::vector<red_msgs::ManipulationObject> & objects)
+{
 
     ROS_INFO("[LTP] Start PlACE execution");
 
@@ -491,27 +493,26 @@ int localTP::executePLACE(std::vector<red_msgs::ManipulationObject> & objects) {
 
     ROS_INFO_STREAM(objects[0].obj);
     // Recognize no precisely pad positionss
-    // if (objects[0].dest != 6) {
+    if (objects[0].dest != 6) {
         // Determine table height
         cameraTask.request.mode = 1;
         callCamera(cameraTask);
         tablePoses = cameraTask.response.poses;
-    // } else {
-    //     // Communicate with camera
-    //     ROS_INFO("[LTP] Set request to camera with mode 1.");
-    //     researchTableByCamera(tablePoses, objIdenifiers);
+    } else {
+        // Communicate with camera
+        ROS_INFO("[LTP] Set request to camera with mode 1.");
+        researchTableByCamera(tablePoses, objIdenifiers);
 
-    //     ROS_INFO_STREAM("Finded OBJECTS num: " << tablePoses.size());
-    // }
+        ROS_INFO_STREAM("Finded OBJECTS num: " << tablePoses.size());
+    }
 
     for (int i = 0; i < objects.size(); ++i) {
 
 
-        // if (!getPadPlace(padPose, objects[i], tablePoses, objIdenifiers)) {
-        //     ROS_WARN("PAD is not equal");
-        //     continue;
-        // }
-
+        if (!getPadPlace(padPose, objects[i], tablePoses, objIdenifiers)) {
+            ROS_WARN("PAD is not equal");
+            continue;
+        }
 
         // We have 5 positions for object placement
         // |    |    |    |    |
@@ -600,7 +601,7 @@ int localTP::executePLACE(std::vector<red_msgs::ManipulationObject> & objects) {
 
 bool localTP::getPadPlace(red_msgs::Pose & p, red_msgs::ManipulationObject & object, std::vector<red_msgs::Pose> & tablePoses, std::vector<long int> & objIdenifiers)
 {
-    if (object.dest < 5 && object.dest > 1) {
+    if (object.dest <= 5 && object.dest >= 1) {
         p = placingTablePoses[object.dest - 1];
         p.z = tablePoses[0].z;
     }
@@ -700,7 +701,8 @@ bool localTP::moveJoints(JointValues angle, std::vector<int> jointNum)
     armPublisher.publish(jointPositions);
 }
 
-int localTP::moveBase(geometry_msgs::Pose2D & Pose) {
+int localTP::moveBase(geometry_msgs::Pose2D & Pose)
+{
 
     /// States:
     /// 1 - all ok
@@ -726,7 +728,8 @@ int localTP::moveBase(geometry_msgs::Pose2D & Pose) {
     return 2;
 }
 
-void localTP::callCamera(red_msgs::CameraTask & task) {
+void localTP::callCamera(red_msgs::CameraTask & task)
+{
     if (compVisionClient.call(task)) {
         ROS_INFO("Successfull");
         std::cout << "===============================================" << std::endl;
