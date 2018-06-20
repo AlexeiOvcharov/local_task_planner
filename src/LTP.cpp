@@ -274,7 +274,7 @@ int localTP::executePICK(std::vector<red_msgs::ManipulationObject> & objects)
             ROS_WARN("Object ids not equal");
             continue;
         }
-        objects[objectIndexOfMessage].dest = 0;
+        // objects[objectIndexOfMessage].dest = 0;
 
         // Find manipulator configuration for optical axis of camera
         objectTransform = recognizedPoses[actualObjectID];
@@ -302,53 +302,98 @@ int localTP::executePICK(std::vector<red_msgs::ManipulationObject> & objects)
         cameraTask.request.request_id = objIdenifiers[actualObjectID];
         callCamera(cameraTask);
         if (cameraError == 1) {
+            ROS_ERROR("Error = 1 from camera");
             cameraError = 0;
             continue;
         }
 
-        // firstPose.x = objectTransform.x;
-        // firstPose.y = objectTransform.y;
-        // firstPose.z = objectTransform.z + 0.1;
-        // firstPose.psi = -objectTransform.psi;
-        firstPose.x = cameraTask.response.poses[0].x;
-        firstPose.y = cameraTask.response.poses[0].y;
-        firstPose.z = cameraTask.response.poses[0].z + 0.1;
-        firstPose.theta = 3.1415;
-        firstPose.psi = -cameraTask.response.poses[0].psi;
+        // Default grasp
+        if (objects[objectIndexOfMessage].dest == 0) {
+            firstPose.x = cameraTask.response.poses[0].x;
+            firstPose.y = cameraTask.response.poses[0].y;
+            firstPose.z = cameraTask.response.poses[0].z + 0.1;
+            firstPose.theta = 3.1415;
+            firstPose.psi = -cameraTask.response.poses[0].psi;
 
-        secondPose = firstPose;
-        secondPose.z -= 0.095;
+            secondPose = firstPose;
+            secondPose.z -= 0.095;
 
-        // Pick object from table
-        ROS_WARN_STREAM("[LTP] PICK THE Objects!!!!");
-        manipPoses.request.poses.push_back(firstPose);
-        manipPoses.request.poses.push_back(secondPose);
-        std::cout << "INFO: ++++++++++++++++++++++++++\n"
-            << manipPoses.request.poses[0] << std::endl;
-                std::cout << "INFO: ++++++++++++++++++++++++++\n"
-            << manipPoses.request.poses[1] << std::endl;
+            // TODO add new alogroithm of pick
+            // Pick object from table
+            ROS_WARN_STREAM("[LTP] PICK THE Objects!!!!");
+            manipPoses.request.poses.push_back(firstPose);
+            manipPoses.request.poses.push_back(secondPose);
+            std::cout << "INFO: ++++++++++++++++++++++++++\n"
+                << manipPoses.request.poses[0] << std::endl;
+                    std::cout << "INFO: ++++++++++++++++++++++++++\n"
+                << manipPoses.request.poses[1] << std::endl;
 
-        if (manipulationLineTrjClient.call(manipPoses)) {
-            std::cout << "\t Successfull." << std::endl;
-        } else {
-            ROS_ERROR("ManipulationLineTrjClient is not active.");
-            continue;
+            if (manipulationLineTrjClient.call(manipPoses)) {
+                std::cout << "\t Successfull." << std::endl;
+            } else {
+                ROS_ERROR("ManipulationLineTrjClient is not active.");
+                continue;
+            }
+            manipPoses.request.poses.clear();
+            ros::service::call("grasp", empty);
+            manipPoses.request.poses.push_back(secondPose);
+            manipPoses.request.poses.push_back(firstPose);
+            if (manipulationLineTrjClient.call(manipPoses)) {
+                std::cout << "\t Successfull." << std::endl;
+            } else {
+                ROS_ERROR("ManipulationLineTrjClient is not active.");
+            }
+            manipPoses.request.poses.clear();
+
+            // If conteiner isn't full, get position of free container and save its id
+            secondPose = objectsContainer.getFreeContainerPoseAndSetID(objIdenifiers[actualObjectID]);
+            firstPose = secondPose;
+            firstPose.z += 0.1;
+        } else if (objects[objectIndexOfMessage].dest == 1) {
+
+            firstPose.x = cameraTask.response.poses[0].x;
+            firstPose.y = cameraTask.response.poses[0].y;
+            firstPose.z = cameraTask.response.poses[0].z;
+            firstPose.theta = 3.1415;
+            firstPose.psi = -cameraTask.response.poses[0].psi;
+
+            secondPose = startPose;
+            secondPose.psi = -cameraTask.response.poses[0].psi;
+
+            ROS_WARN_STREAM("[LTP] PICK THE Objects!!!!");
+            manipPoses.request.poses.push_back(firstPose);
+            manipPoses.request.poses.push_back(secondPose);
+            std::cout << "INFO: ++++++++++++++++++++++++++\n"
+                << manipPoses.request.poses[0] << std::endl;
+                    std::cout << "INFO: ++++++++++++++++++++++++++\n"
+                << manipPoses.request.poses[1] << std::endl;
+
+            if (manipulationLineTrjClient.call(manipPoses)) {
+                std::cout << "\t Successfull." << std::endl;
+            } else {
+                ROS_ERROR("ManipulationLineTrjClient is not active.");
+                continue;
+            }
+
+            // TODO corrrect x shift and z
+            firstPose = secondPose;
+            firstPose.x -= 0.07;
+            firstPose.z += 0.07;
+
+            manipPoses.request.poses.push_back(secondPose);
+            manipPoses.request.poses.push_back(firstPose);
+            std::cout << "INFO: ++++++++++++++++++++++++++\n"
+                << manipPoses.request.poses[0] << std::endl;
+                    std::cout << "INFO: ++++++++++++++++++++++++++\n"
+                << manipPoses.request.poses[1] << std::endl;
+
+            if (manipulationLineTrjClient.call(manipPoses)) {
+                std::cout << "\t Successfull." << std::endl;
+            } else {
+                ROS_ERROR("ManipulationLineTrjClient is not active.");
+                continue;
+            }
         }
-        manipPoses.request.poses.clear();
-        ros::service::call("grasp", empty);
-        manipPoses.request.poses.push_back(secondPose);
-        manipPoses.request.poses.push_back(firstPose);
-        if (manipulationLineTrjClient.call(manipPoses)) {
-            std::cout << "\t Successfull." << std::endl;
-        } else {
-            ROS_ERROR("ManipulationLineTrjClient is not active.");
-        }
-        manipPoses.request.poses.clear();
-
-        // If conteiner isn't full, get position of free container and save its id
-        secondPose = objectsContainer.getFreeContainerPoseAndSetID(objIdenifiers[actualObjectID]);
-        firstPose = secondPose;
-        firstPose.z += 0.1;
 
         // TODO move to initial position by the segmental
 
